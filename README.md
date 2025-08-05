@@ -40,13 +40,9 @@ export WANDB_API_KEY=your_api_key
 export WANDB_ENTITY=your_entity
 ```
 
-2. NOVER uses [Hydra](https://hydra.cc/docs/intro/) for configuration management.  
-To run an experiment, simply create a YAML file specifying only the parameters you want to override.  
-For example, see `config/my_exp.yaml`.  
-For the full list of configurable options, refer to `config/config.yaml`.  
-Some key parameters to customize include:
+2. NOVER uses [Hydra](https://hydra.cc/docs/intro/) for configuration management. To run an experiment, simply create a YAML file specifying only the parameters you want to override. For example, see `config/my_exp.yaml`. For the full list of configurable options, refer to `config/config.yaml`.  
 
-- **Project identification**:
+- Some key parameters to customize include:
   - `project.suffix`: A unique identifier for your training run
   - `project.wandb_project`: Your Weights & Biases project name
   - `project.save_base_path`: Directory to save model checkpoints
@@ -62,10 +58,10 @@ Some key parameters to customize include:
 ```bash
 # first, start the vllm server
 # This will launch a VLLM server for model rollouts in Reinforcement Learning
-sh run_vllm_server.sh my_exp
+./scripts/run_vllm_server.sh my_exp
 
 # then, start the training
-sh run_training.sh my_exp
+./scripts/run_training.sh my_exp
 ```
 
 ## Data
@@ -89,13 +85,13 @@ Answer the question and return in the following format:
 
 ```bash
 # Format Hugging Face dataset
-./format_dataset.sh squad --prompt-column question --reference-column answers.text
+./scripts/format_dataset.sh squad --prompt-column question --reference-column answers.text
 
 # Format a custom CSV file
-./format_dataset.sh data.csv --prompt-column question --reference-column answer
+./scripts/format_dataset.sh data.csv --prompt-column question --reference-column answer
 
 # Format a custom JSONL file
-./format_dataset.sh data.jsonl --prompt-column input --reference-column output
+./scripts/format_dataset.sh data.jsonl --prompt-column input --reference-column output
 ```
 
 ## Generation

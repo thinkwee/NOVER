@@ -4,15 +4,15 @@ Main training script using Hydra configuration management.
 """
 
 from omegaconf import DictConfig
-from config_manager import (
+from .config_manager import (
     setup_environment, init_wandb, get_training_config, get_peft_config, save_config_to_yaml
 )
 import hydra
-from data_loader import load_dataset
-from trainer import CustomGRPOTrainer
-from reward_functions import tag_format_reward, reasoning_reward, efficiency_reward
+from .data_loader import load_dataset
+from .trainer import CustomGRPOTrainer
+from .reward_functions import tag_format_reward, reasoning_reward, efficiency_reward
 
-@hydra.main(version_base=None, config_path="config", config_name="config")
+@hydra.main(version_base=None, config_path="../config", config_name="config")
 def main(config: DictConfig):
     """
     Main training function using hydra configuration.

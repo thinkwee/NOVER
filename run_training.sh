@@ -7,9 +7,9 @@ export NCCL_P2P_DISABLE=1
 export VLLM_LOG_LEVEL=WARNING
 export TRANSFORMERS_VERBOSITY=error
 export HF_HUB_VERBOSITY=error
+export DEEPSPEED_LOG_LEVEL=ERROR
 export PYTHONWARNINGS=ignore
 export CUDA_LAUNCH_BLOCKING=0
-export DEEPSPEED_LOG_LEVEL=ERROR
 
 # Check if experiment name is provided
 if [ $# -eq 0 ]; then
@@ -25,7 +25,7 @@ get_config() {
     local default="$2"
     local config_name="${3:-config}"
     
-    python3 simple_config_loader.py --config-name "$config_name" --key "$key" --default "$default" 2>/dev/null
+    python3 src/simple_config_loader.py --config-name "$config_name" --key "$key" --default "$default" 2>/dev/null
 }
 
 # Get config name from command line
@@ -50,4 +50,4 @@ echo "Using final tag: <${FINAL_TAG}>"
 accelerate launch \
     --num_processes=$TRAINING_GPUS \
     --main_process_port $MAIN_PROCESS_PORT \
-    main.py --config-name "$CONFIG_NAME" 
+    -m src.main --config-name "$CONFIG_NAME" 

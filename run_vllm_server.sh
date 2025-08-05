@@ -17,7 +17,7 @@ get_config() {
     local default="$2"
     local config_name="${3:-config}"
     
-    python3 simple_config_loader.py --config-name "$config_name" --key "$key" --default "$default" 2>/dev/null
+    python3 src/simple_config_loader.py --config-name "$config_name" --key "$key" --default "$default" 2>/dev/null
 }
 
 # Get config name from command line

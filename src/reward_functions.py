@@ -2,7 +2,7 @@ import re
 import numpy as np
 from typing import List
 import torch
-from utils import extract_content, calculate_perplexity, extract_all_content, safe_wandb_log
+from .utils import extract_content, calculate_perplexity, extract_all_content, safe_wandb_log
 import pandas as pd
 import wandb
 

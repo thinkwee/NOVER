@@ -1,8 +1,5 @@
 #!/bin/bash
 
-# Make the format_dataset.py script executable
-chmod +x format_dataset.py
-
 # Check if any arguments were provided
 if [ $# -eq 0 ]; then
     echo "Usage: ./format_dataset.sh [DATASET_SOURCE] [OPTIONS]"
@@ -25,4 +22,4 @@ if [ $# -eq 0 ]; then
 fi
 
 # Run the Python script with all arguments passed to this shell script
-python3 format_dataset.py "$@" 
+python3 src/format_dataset.py "$@" 

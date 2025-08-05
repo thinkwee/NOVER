@@ -4,9 +4,9 @@ import wandb
 from torch import nn
 from accelerate.utils import gather_object
 from trl.data_utils import is_conversational, maybe_apply_chat_template
-from reward_functions import set_reference_model, validation_accuracy
+from .reward_functions import set_reference_model, validation_accuracy
 from typing import Union, Any, List
-from utils import safe_wandb_log
+from .utils import safe_wandb_log
 from trl.trainer.callbacks import SyncRefModelCallback
 import copy
 import Levenshtein
@@ -48,7 +48,7 @@ class SyncRefLoraModelCallback(TrainerCallback):
         self.ref_model = ref_model
         self.policy_model = policy_model
         
-    def on_save(self, args):
+    def on_save(self, args, state, control, **kwargs):
         try:
             policy_adapter_state = get_peft_model_state_dict(self.policy_model)
             ref_adapter_state = get_peft_model_state_dict(self.ref_model)

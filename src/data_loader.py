@@ -2,7 +2,7 @@ import os
 from typing import Optional, Tuple, Dict, Any
 from datasets import Dataset, load_from_disk, load_dataset
 
-from config_manager import get_dataset_path
+from .config_manager import get_dataset_path
 
 def load_dataset(
     config=None,

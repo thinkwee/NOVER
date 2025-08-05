@@ -5,6 +5,7 @@ from transformers import PreTrainedModel, PreTrainedTokenizer
 import wandb
 import numpy as np
 from omegaconf import DictConfig
+from .config_manager import get_training_config
 
 # Default tag values
 DEFAULT_INTERMEDIATE_TAG = "think"

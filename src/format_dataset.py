@@ -2,7 +2,7 @@
 import argparse
 import os
 import sys
-from data_loader import format_sft_dataset
+from .data_loader import format_sft_dataset
 
 # Default tag values
 DEFAULT_INTERMEDIATE_TAG = "think"
