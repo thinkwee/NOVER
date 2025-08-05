@@ -40,5 +40,5 @@ export CUDA_LAUNCH_BLOCKING=1
 echo "Starting vLLM server for model: $MODEL_NAME"
 echo "Using GPU: $GPU_IDS, Port: $PORT, GPU Memory: $GPU_MEM_UTIL"
 
-# 
+# start vllm server
 NCCL_DEBUG=WARN trl vllm-serve --model "$MODEL_NAME" --port "$PORT" --gpu_memory_utilization "$GPU_MEM_UTIL" --tensor_parallel_size "$TENSOR_PARALLEL_SIZE"

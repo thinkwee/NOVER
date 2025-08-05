@@ -40,13 +40,14 @@ CONFIG_VLLM_HOST=$(get_config "vllm.host" "localhost" "$CONFIG_NAME")
 INTERMEDIATE_TAG=$(get_config "dataset.intermediate_tag" "think" "$CONFIG_NAME")
 FINAL_TAG=$(get_config "dataset.final_tag" "answer" "$CONFIG_NAME")
 
+# set environment variables
 export CUDA_VISIBLE_DEVICES="$TRAINING_GPU_IDS"
 echo "Using GPUs $TRAINING_GPU_IDS for training (num_gpus: $TRAINING_GPUS)"
 echo "Training will connect to vLLM server at ${CONFIG_VLLM_HOST}:${USED_VLLM_PORT}"
 echo "Using intermediate tag: <${INTERMEDIATE_TAG}>"
 echo "Using final tag: <${FINAL_TAG}>"
 
-# Start training
+# start training
 accelerate launch \
     --num_processes=$TRAINING_GPUS \
     --main_process_port $MAIN_PROCESS_PORT \

@@ -475,7 +475,7 @@ class CustomGRPOTrainer(GRPOTrainer):
             mode (str): Training mode ("train" or "eval")
         """
         
-        # 
+        # calculate validation accuracy
         if mode == "eval" and reference_text:
             accuracy_scores, overall_accuracy, overall_max_similarity_at_k = self._calculate_validation_accuracy(
                 inputs, prompts, completions, reference_text, mode
@@ -485,11 +485,11 @@ class CustomGRPOTrainer(GRPOTrainer):
                 overall_accuracy, overall_max_similarity_at_k
             )
 
-        # 
+        # log detailed rewards analysis
         if self.accelerator.is_main_process and self.state.global_step % self.args.logging_steps == 0:
             self._log_detailed_rewards_analysis(rewards, rewards_per_func, advantages, mean_grouped_rewards, std_grouped_rewards)
 
-        # 
+        # log diversity analysis
         if self.log_completions and self.state.global_step % self.args.logging_steps == 0:
             completions_to_log = gather_object(completions_text)
             self._log_diversity_analysis(completions_to_log, mode)
