@@ -3,7 +3,15 @@ import argparse
 import os
 import sys
 from data_loader import format_sft_dataset
-from config import HF_HOME, get_dataset_path, INTERMEDIATE_TAG, FINAL_TAG
+
+# Default tag values
+DEFAULT_INTERMEDIATE_TAG = "think"
+DEFAULT_FINAL_TAG = "answer"
+DEFAULT_HF_HOME = os.path.expanduser("~/.cache/huggingface")
+
+def get_dataset_path(dataset_name):
+    """Return the full path to the dataset."""
+    return os.path.join(DEFAULT_HF_HOME, "datasets", dataset_name)
 
 def main():
     parser = argparse.ArgumentParser(description="Format any SFT dataset for NOVER training")
@@ -52,15 +60,15 @@ def main():
     parser.add_argument(
         "--intermediate-tag",
         type=str,
-        default=INTERMEDIATE_TAG,
-        help=f"Custom intermediate tag (default: {INTERMEDIATE_TAG})"
+        default=DEFAULT_INTERMEDIATE_TAG,
+        help=f"Custom intermediate tag (default: {DEFAULT_INTERMEDIATE_TAG})"
     )
     
     parser.add_argument(
         "--final-tag",
         type=str,
-        default=FINAL_TAG,
-        help=f"Custom final tag (default: {FINAL_TAG})"
+        default=DEFAULT_FINAL_TAG,
+        help=f"Custom final tag (default: {DEFAULT_FINAL_TAG})"
     )
     
     args = parser.parse_args()
@@ -74,7 +82,7 @@ def main():
     
     # Set output directory if not provided
     if args.output_dir is None:
-        args.output_dir = os.path.join(HF_HOME, "datasets", args.dataset_name)
+        args.output_dir = get_dataset_path(args.dataset_name)
     
     print(f"Formatting dataset from: {args.dataset_source}")
     print(f"Using prompt column: {args.prompt_column}")
@@ -95,15 +103,14 @@ def main():
         )
         
         print(f"Dataset successfully formatted and saved to: {dataset_path}")
-        print("\nTo use this dataset for NOVER training, update your config.py:")
-        print(f'DATASET_NAME = "{args.dataset_name}"')
-        print(f'INTERMEDIATE_TAG = "{args.intermediate_tag}"')
-        print(f'FINAL_TAG = "{args.final_tag}"')
+        print("\nTo use this dataset for NOVER training, update your config.yaml:")
+        print(f'  dataset:')
+        print(f'    name: "{args.dataset_name}"')
+        print(f'    intermediate_tag: "{args.intermediate_tag}"')
+        print(f'    final_tag: "{args.final_tag}"')
         
     except Exception as e:
         print(f"Error formatting dataset: {e}")
-        import traceback
-        print(traceback.format_exc())
         sys.exit(1)
 
 if __name__ == "__main__":

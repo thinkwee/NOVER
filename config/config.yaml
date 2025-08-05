@@ -1,0 +1,107 @@
+defaults:
+  - _self_
+
+project:
+  suffix: "YOUR_SUFFIX"  # Unique identifier suffix for this training run
+  wandb_project: "YOUR_WANDB_PROJECT"  # Weights & Biases project name for experiment tracking
+  save_base_path: "YOUR_SAVE_BASE_PATH"  # Base directory path for saving checkpoints and outputs
+
+dataset:
+  name: "YOUR_DATASET_NAME_UNDER_HF_HOME"  # Name of the dataset under HuggingFace home directory
+  subset: null  # Specific subset of the dataset to use (null for full dataset)
+  hf_home: "YOUR_HF_HOME"  # HuggingFace home directory path
+  validation_size: 0  # Size of validation split (0 for no validation split)
+  intermediate_tag: "think"  # Tag used to mark intermediate reasoning steps in the dataset
+  final_tag: "answer"  # Tag used to mark final answers in the dataset
+
+model:
+  name: "YOUR_MODEL_NAME"  # Name of the base model to load from HuggingFace
+  name_vllm: "YOUR_MODEL_NAME_VLLM"  # Model name for vLLM server (usually the same as the base model)
+  resume_from_checkpoint: false  # Whether to resume training from a previous checkpoint
+  adapter_dir: ""  # Directory containing LoRA adapters to load
+  latest_checkpoint_step: null  # Specific checkpoint step to resume from (null for latest)
+
+training:
+  # Batch settings
+  batch_size: 8  # Number of samples per training batch
+  gradient_accumulation_steps: 1  # Number of steps to accumulate gradients before updating weights
+  num_generations: 8  # Number of rollouts to create per training sample
+  
+  # Training loop settings
+  num_train_epochs: 2  # Total number of training epochs
+  num_iterations: 1  # Number of iterations per epoch
+  learning_rate: 1.0e-5  # The initial learning rate for AdamW
+  beta: 0.1  # KL divergence penalty coefficient for RL training. If set to 0.0, reference model is not loaded, saving memory.
+  
+  # Checkpoint and logging
+  logging_steps: 10  # Frequency of logging training metrics
+  save_steps: 100  # Frequency of saving model checkpoints
+  eval_steps: 100  # Frequency of evaluation during training
+  save_total_limit: 10  # Maximum number of checkpoints to keep
+  evaluation_strategy: "no"  # Evaluation strategy ("no", "steps", "epoch")
+  
+  # Generation settings
+  max_completion_length: 2048  # Maximum length of generated completions, for small completion length, the model may hardly response in the correct format.
+  temperature: 0.7  # Temperature for sampling during generation
+  
+  # GRPO specific settings
+  scale_rewards: false  # Whether to scale rewards during training
+  epsilon: 0.1  # Epsilon value for GRPO algorithm
+  epsilon_high: 0.28  # Upper bound epsilon for better exploration, see DAPO: https://huggingface.co/papers/2503.14476
+  loss_type: "dr_grpo"  # Supports Dr.GRPO, see https://github.com/sail-sg/understand-r1-zero
+  mask_truncated_completions: true  # Whether to mask truncated completions in loss calculation
+  top_entropy_quantile: 0.2  # High-entropy token filtering, see https://huggingface.co/papers/2506.01939
+  importance_sampling_level: "sequence"  # Sequence-level importance sampling, see GSPO: https://huggingface.co/papers/2507.18071
+  use_liger_loss: false  # Whether to use LIGER loss function, does not support entropy-based filtering for now
+  use_transformers_paged: true  # Enables continuous batching for faster generation.
+  
+  # Reference model settings
+  sync_ref_model: true  # Whether to synchronize reference model with current model
+  ref_model_mixup_alpha: 0.6  # Alpha value for reference model mixup
+  ref_model_sync_steps: 100  # Steps between reference model synchronization
+
+reward:
+  tag_format_reward_weight: 1.0  # Weight for tag format reward component
+  reasoning_reward_weight: 1.0  # Weight for reasoning reward component
+  efficiency_reward_weight: 1.0  # Weight for efficiency reward component
+
+vllm:
+  use_vllm: true  # Whether to use vLLM for efficient inference
+  host: "localhost"  # Host address for vLLM server
+  port: 8087  # Port number for vLLM server
+  gpu_memory_utilization: 0.85  # GPU memory utilization ratio for vLLM
+  request_timeout: 3600  # Timeout for vLLM requests in seconds
+  mode: "server"  # vLLM mode ("server", "colocate")
+  guided_decoding_regex: null  # Regular expression for guided decoding (null for none)
+  tensor_parallel_size: 1  # Number of GPUs for tensor parallelism in vLLM
+
+lora:
+  r: 16
+  lora_alpha: 32
+  lora_dropout: 0.1
+  bias: "none"
+  task_type: "CAUSAL_LM"
+  target_modules:
+    - "q_proj"
+    - "k_proj"
+    - "v_proj"
+    - "o_proj"
+    - "gate_proj"
+    - "up_proj"
+    - "down_proj"
+  modules_to_save:
+    - "lm_head"
+
+# GPU configuration
+gpu:
+  # Training GPU configuration
+  training:
+    gpu_ids: "0"  # GPU IDs for training, comma-separated for multiple GPUs (e.g., "0,1,2,3")
+    num_gpus: 1   # Number of GPUs to use for training
+    main_process_port: 28890  # Port for main process in distributed training
+  
+  # vLLM server GPU configuration
+  vllm:
+    gpu_ids: "1"  # GPU IDs for vLLM server, comma-separated for multiple GPUs
+    num_gpus: 1   # Number of GPUs to use for vLLM server
+    tensor_parallel_size: 1  # Tensor parallelism size for vLLM

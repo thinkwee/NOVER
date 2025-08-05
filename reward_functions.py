@@ -1,10 +1,10 @@
 import re
 import numpy as np
+from typing import List
 import torch
 from utils import extract_content, calculate_perplexity, extract_all_content, safe_wandb_log
 import pandas as pd
 import wandb
-from config import INTERMEDIATE_TAG, FINAL_TAG
 
 _ref_model = None
 _ref_tokenizer = None
@@ -14,12 +14,19 @@ def set_reference_model(model, tokenizer):
     _ref_model = model
     _ref_tokenizer = tokenizer
 
-def tag_format_reward(completions, intermediate_tag=None, final_tag=None, **kwargs):
-    if intermediate_tag is None:
-        intermediate_tag = INTERMEDIATE_TAG
-    if final_tag is None:
-        final_tag = FINAL_TAG
-        
+def tag_format_reward(completions: List[str], intermediate_tag: str = "think", final_tag: str = "answer", **kwargs) -> List[float]:
+    """
+    Reward function for proper tag formatting.
+    
+    Args:
+        completions: List of completion texts
+        intermediate_tag: Tag for intermediate reasoning
+        final_tag: Tag for final answer
+        **kwargs: Additional arguments
+    
+    Returns:
+        List of reward scores
+    """
     rewards = []
     
     tag_details = []
@@ -61,14 +68,21 @@ def tag_format_reward(completions, intermediate_tag=None, final_tag=None, **kwar
                 "tag_reward/min": np.min(rewards),
             }
             
-            prompts = kwargs.get("prompts", [""] * len(completions))
-            if len(prompts) > 0 and isinstance(prompts[0], str):
+            # More robust parameter handling
+            prompts = kwargs.get("prompts", [])
+            if isinstance(prompts, list) and len(prompts) > 0:
                 question = prompts[0]
             else:
-                question = prompts[0].split("Answer the question and return in the following format")[0] if "Answer the question and return in the following format" in prompts[0] else prompts[0]
+                question = str(prompts) if prompts else ""
                 
-            reference = kwargs.get("reference", [""] * len(completions))
-            reference_answer = reference[0] if isinstance(reference, list) and len(reference) > 0 else ""
+            if isinstance(question, str) and "Answer the question and return in the following format" in question:
+                question = question.split("Answer the question and return in the following format")[0]
+                
+            reference = kwargs.get("reference", [])
+            if isinstance(reference, list) and len(reference) > 0:
+                reference_answer = reference[0]
+            else:
+                reference_answer = str(reference) if reference else ""
             
             table = {
                 "step": [str(step)] * len(completions),
@@ -102,17 +116,37 @@ def tag_format_reward(completions, intermediate_tag=None, final_tag=None, **kwar
     return rewards
 
 def precompute_completion_data(completions, intermediate_tag=None, final_tag=None, **kwargs):
+    """
+    Precompute completion data for reward functions.
+
+    Args:
+        completions: List of completions
+        intermediate_tag: The intermediate tag to use
+        final_tag: The final tag to use
+        **kwargs: Additional keyword arguments
+    """
     global _ref_model, _ref_tokenizer
     if _ref_model is None or _ref_tokenizer is None:
         raise ValueError("Reference model or tokenizer not initialized. Call set_reference_model() first.")
     
     if intermediate_tag is None:
-        intermediate_tag = INTERMEDIATE_TAG
+        intermediate_tag = "think"
     if final_tag is None:
-        final_tag = FINAL_TAG
+        final_tag = "answer"
         
-    prompt = kwargs.get("prompts", [""])[0]
-    reference_answer = kwargs.get("reference", [""])[0] if "reference" in kwargs else ""
+    # More robust parameter handling
+    prompts = kwargs.get("prompts", [])
+    if isinstance(prompts, list) and len(prompts) > 0:
+        prompt = prompts[0]
+    else:
+        prompt = str(prompts) if prompts else ""
+    
+    reference = kwargs.get("reference", [])
+    if isinstance(reference, list) and len(reference) > 0:
+        reference_answer = reference[0]
+    else:
+        reference_answer = str(reference) if reference else ""
+    
     question = prompt.split("Answer the question and return in the following format")[0] if "Answer the question and return in the following format" in prompt else prompt
     
     if not reference_answer or reference_answer == "":
@@ -169,6 +203,13 @@ def precompute_completion_data(completions, intermediate_tag=None, final_tag=Non
     return completion_data, question, reference_answer, tag_rewards
 
 def efficiency_reward(completions, **kwargs):
+    """
+    Reward function for efficiency.
+
+    Args:
+        completions: List of completions
+        **kwargs: Additional keyword arguments
+    """
     completion_data, question, reference_answer, _ = precompute_completion_data(completions, **kwargs)
     
     rewards = [0.0] * len(completions)
@@ -291,6 +332,13 @@ def efficiency_reward(completions, **kwargs):
     return rewards
 
 def reasoning_reward(completions, **kwargs):
+    """
+    Reward function for reasoning.
+
+    Args:
+        completions: List of completions
+        **kwargs: Additional keyword arguments
+    """
     completion_data, question, reference_answer, _ = precompute_completion_data(completions, **kwargs)
     
     ppl_values = []
@@ -388,6 +436,13 @@ def reasoning_reward(completions, **kwargs):
     return final_rewards
 
 def validation_accuracy(completions, **kwargs):
+    """
+    Reward function for validation accuracy.
+
+    Args:
+        completions: List of completions
+        **kwargs: Additional keyword arguments
+    """
     references = kwargs.get("reference", [])
     if not references or len(references) == 0:
         print("[WARNING] No reference answers provided for validation accuracy calculation")
@@ -440,7 +495,13 @@ def validation_accuracy(completions, **kwargs):
     accuracy_scores = []
     
     for i, completion in enumerate(completions):
-        ref_answer = references[i] if i < len(references) else references[0]
+        # More robust reference handling
+        if isinstance(references, list) and i < len(references):
+            ref_answer = references[i]
+        elif isinstance(references, list) and len(references) > 0:
+            ref_answer = references[0]
+        else:
+            ref_answer = str(references) if references else ""
         
         answer_content = extract_content(completion, "answer")
         
@@ -466,16 +527,30 @@ def validation_accuracy(completions, **kwargs):
             
             safe_wandb_log(log_dict, step=step)
             
-            prompts = kwargs.get("prompts", [""] * len(completions))
-            question = prompts[0] if len(prompts) > 0 else ""
+            # More robust parameter handling
+            prompts = kwargs.get("prompts", [])
+            if isinstance(prompts, list) and len(prompts) > 0:
+                question = prompts[0]
+            else:
+                question = str(prompts) if prompts else ""
+                
             if isinstance(question, str) and "Answer the question and return in the following format" in question:
                 question = question.split("Answer the question and return in the following format")[0]
+            
+            # Prepare reference list for table
+            if isinstance(references, list):
+                ref_list = references[:len(completions)]
+                # Pad if needed
+                while len(ref_list) < len(completions):
+                    ref_list.append(ref_list[0] if ref_list else "")
+            else:
+                ref_list = [str(references)] * len(completions)
             
             table = {
                 "step": [str(step)] * len(completions),
                 "question": [question for _ in range(len(completions))],
                 "completion": [comp for comp in completions],
-                "reference": [ref for ref in references[:len(completions)]],
+                "reference": ref_list,
                 "extracted_answer": [extract_content(comp, "answer") for comp in completions],
                 "edit_distance_score": accuracy_scores,
             }

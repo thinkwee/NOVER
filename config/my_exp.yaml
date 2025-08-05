@@ -1,0 +1,22 @@
+defaults:
+  - config
+
+project:
+  suffix: "my_exp"
+  wandb_project: "my_exp"
+  save_base_path: "/the/path/to/save/models"
+
+dataset:
+  name: "your_dataset_name_under_hf_home"
+  subset: null
+  hf_home: "/the/path/to/huggingface/where/you/store/your/datasets/and/models"
+
+model:
+  name: "Qwen/Qwen2.5-7B-Instruct"
+  name_vllm: "Qwen/Qwen2.5-7B-Instruct"
+
+training:
+  save_steps: 100
+  logging_steps: 100
+  max_completion_length: 1024
+  ref_model_sync_steps: 100

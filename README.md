@@ -12,40 +12,63 @@ This is the official implementation of the paper ["NOVER: Incentive Training for
 
 ## Overview
 
-NOVER is a novel reinforcement learning approach for training language models without requiring explicit verifiers. The method can perform DeepSeek R1-Zero-like training on any SFT data, extending reasoning abilities beyond math and coding to fields such as translation, scientific reasoning, creative writing, social reasoning, and more.
+- **NOVER** (**NO-VER**ifier) is a novel reinforcement learning approach for training language models **without requiring explicit verifiers**. 
+- The method can perform DeepSeek R1-Zero-like training on **ANY SFT DATA**, extending reasoning abilities beyond math and coding.
 
-## Installation
+## Updates
+- [x] Initialize training code  
+- [x] Simplify SFT data import  
+- [x] Add custom tag support  
+- [x] Upgrade to `trl==0.20.0`  
+- [x] Cleaned NOVER sampled data  
+- [x] Integrate Hydra config management  
+- [x] Simplify logging in `CustomGRPOTrainer`  
+- [x] Streamline NCCL logging  
+- [x] Simplify start script  
+- [ ] Clean full NOVEReason data (data has been cleaned, but not all was used in the paper)  
+- [ ] Add inverse incentive training support  
+- [ ] Add incentive steering support  
 
-1. Clone this repository
+## QuickStart
+
+1. Clone this repository, install dependencies, set your [Weights & Biases](https://wandb.ai/site) credentials.
 ```bash
 git clone https://github.com/thinkwee/NOVER.git
 cd NOVER
-```
-
-2. Install dependencies
-```bash
 pip install -r requirements.txt
+export WANDB_API_KEY=your_api_key
+export WANDB_ENTITY=your_entity
 ```
 
-## Configuration
-
-Before training, you need to modify the configuration settings in `config.py`. We recommend using [Qwen/Qwen2.5-7B](https://huggingface.co/Qwen/Qwen2.5-7B).
-The key parameters to update include:
+2. NOVER uses [Hydra](https://hydra.cc/docs/intro/) for configuration management.  
+To run an experiment, simply create a YAML file specifying only the parameters you want to override.  
+For example, see `config/my_exp.yaml`.  
+For the full list of configurable options, refer to `config/config.yaml`.  
+Some key parameters to customize include:
 
 - **Project identification**:
-  - `SUFFIX`: A unique identifier for your training run
-  - `WANDB_PROJECT`: Your Weights & Biases project name
-  - `HF_HOME`: Your huggingface root path for loading models and datasets
-  - `DATASET_NAME`: Your dataset name under `HF_HOME`
+  - `project.suffix`: A unique identifier for your training run
+  - `project.wandb_project`: Your Weights & Biases project name
+  - `project.save_base_path`: Directory to save model checkpoints
+  - `dataset.hf_home`: Your huggingface root path for loading models and datasets
+  - `dataset.name`: Your dataset name under `HF_HOME`
+  - `model.name_vllm`: Model to use for VLLM server (e.g., "Qwen/Qwen2.5-7B")
+  - `model.name`: Model to use for training (usually same as VLLM model)
 
-- **Model settings**:
-  - `MODEL_NAME_VLLM`: Model to use for VLLM server (e.g., "Qwen/Qwen2.5-7B")
-  - `MODEL_NAME`: Model to use for training (usually same as VLLM model)
-  - `SAVE_BASE_PATH`: Directory to save model checkpoints
+3. Prepare your data, see the [data section](#data) below for more details.
 
-## Training Process
+4. Start the training! This will begin the training process using the configuration parameters defined in `config/my_exp.yaml`.
 
-### Step 1: Prepare Your Data
+```bash
+# first, start the vllm server
+# This will launch a VLLM server for model rollouts in Reinforcement Learning
+sh run_vllm_server.sh my_exp
+
+# then, start the training
+sh run_training.sh my_exp
+```
+
+## Data
 - Format your data as a standard Hugging Face Arrow dataset with at least two columns: `prompt` and `reference`, representing input and output in any standard SFT dataset. No conversational format or system prompts are required.
 - Structure your input data in the `prompt` column as follows:
 ```markdown
@@ -62,67 +85,23 @@ Answer the question and return in the following format:
 </answer>
 ```
 
-#### NOVER for ANY SFT DATA
-For convenience, you can use the included dataset formatter to automatically format your dataset:
+- For convenience, you can use the included dataset formatter to automatically format your dataset.
+
 ```bash
 # Format Hugging Face dataset
 ./format_dataset.sh squad --prompt-column question --reference-column answers.text
 
-# Format CSV file
+# Format a custom CSV file
 ./format_dataset.sh data.csv --prompt-column question --reference-column answer
 
-# Format JSONL file
+# Format a custom JSONL file
 ./format_dataset.sh data.jsonl --prompt-column input --reference-column output
 ```
 
-#### Using Custom Tags
+## Generation
 
-NOVER now supports custom intermediate and final tags beyond the default `<think>` and `<answer>` tags. This allows you to adapt the system to different incentivived abilities and task types, for example:
+The model is trained with Hugging Face PEFT and saved in the standard LoRA adapter format. To use the trained model, you can use the following code:
 
-```bash
-# Format dataset with custom tags
-./format_dataset.sh data.jsonl --intermediate-tag role_play --final-tag story
-
-# Start training with custom tags
-./run_training.sh --intermediate-tag role_play --final-tag story
-```
-
-You can also set default tags in `config.py` by modifying the `INTERMEDIATE_TAG` and `FINAL_TAG` variables. This feature enables flexibility in how models express their reasoning process and final answers.
-
-### Step 2: Weights & Biases Setup
-
-Set up your Weights & Biases credentials:
-
-```bash
-export WANDB_API_KEY=your_api_key
-export WANDB_ENTITY=your_entity
-```
-
-### Step 3: Start the VLLM Server
-
-First, start the VLLM server for model rollouts:
-
-```bash
-sh run_vllm_server.sh
-```
-
-This will launch a VLLM server using the model specified in `MODEL_NAME_VLLM` and the port specified in `VLLM_PORT`.
-
-### Step 4: Start Training
-
-After the VLLM server is running, start the training process:
-
-```bash
-sh run_training.sh
-```
-
-This will begin the training process using the configuration parameters defined in `config.py`.
-
-## Model Generation
-
-The model is trained with Hugging Face PEFT and saved in the standard LoRA adapter format. To use the trained model:
-
-1. Load the adapter and merge it with the base model:
 
 ```python
 from peft import PeftModel
@@ -157,13 +136,3 @@ If you find this work useful, please cite our paper:
       url={https://arxiv.org/abs/2505.16022}, 
 }
 ```
-
-## Todo
-- [x] init for training code
-- [x] support easier SFT data import
-- [x] support custom tags
-- [ ] upgrade to trl 0.17.0
-- [x] cleaned NOVER sampled data
-- [ ] cleaned NOVER full data
-- [ ] support inverse incentive training
-- [ ] support incentive steering

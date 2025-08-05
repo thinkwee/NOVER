@@ -1,36 +1,32 @@
 import os
 from typing import Optional, Tuple, Dict, Any
 from datasets import Dataset, load_from_disk, load_dataset
-from config import DATASET_NAME, DATASET_SUBSET, get_dataset_path, INTERMEDIATE_TAG, FINAL_TAG
+
+from config_manager import get_dataset_path
 
 def load_dataset(
-    dataset_name: str = DATASET_NAME,
-    subset: Optional[int] = DATASET_SUBSET,
+    config=None,
+    dataset_name: str = "YOUR_DATASET_NAME_UNDER_HF_HOME",
+    subset: Optional[int] = None,
     shuffle: bool = True,
     seed: int = 42,
     val_size: int = 0
-) -> Dataset:
-    dataset_path = get_dataset_path(dataset_name)
-    dataset = load_from_disk(dataset_path)
+) -> Tuple[Dataset, Optional[Dataset]]:
+    """
+    Load and split dataset for training.
     
-    train_data = dataset["train"]
+    Args:
+        config: Configuration object containing dataset settings
+        dataset_name: Name of the dataset
+        subset: Optional subset size for training data
+        shuffle: Whether to shuffle the data
+        seed: Random seed for shuffling
+        val_size: Size of validation set (0 for no validation)
     
-    if shuffle:
-        train_data = train_data.shuffle(seed=seed)
-    
-    if subset is not None and isinstance(subset, int) and subset > 0:
-        train_data = train_data.select(range(min(subset, len(train_data))))
-    
-    return train_data
-
-def load_train_val_dataset(
-    dataset_name: str = DATASET_NAME,
-    subset: Optional[int] = DATASET_SUBSET,
-    shuffle: bool = True,
-    seed: int = 42,
-    val_size: int = 128
-) -> Tuple[Dataset, Dataset]:
-    dataset_path = get_dataset_path(dataset_name)
+    Returns:
+        Tuple of (train_dataset, eval_dataset)
+    """
+    dataset_path = get_dataset_path(config, dataset_name)
     dataset = load_from_disk(dataset_path)
     
     has_validation_split = "validation" in dataset
@@ -44,7 +40,7 @@ def load_train_val_dataset(
         full_data = full_data.select(range(min(subset, len(full_data))))
     
     if val_size <= 0:
-        print(f"no validation")
+        print(f"No validation set requested")
         return full_data, None
     
     if has_validation_split:
@@ -66,6 +62,19 @@ def load_train_val_dataset(
     print(f"[INFO] Created validation split from training data: {len(train_data)} train, {len(val_data)} validation")
     return train_data, val_data
 
+def load_train_val_dataset(
+    dataset_name: str = "YOUR_DATASET_NAME_UNDER_HF_HOME",
+    subset: Optional[int] = None,
+    shuffle: bool = True,
+    seed: int = 42,
+    val_size: int = 128
+) -> Tuple[Dataset, Dataset]:
+    """
+    Legacy function for backward compatibility.
+    Use load_dataset() instead.
+    """
+    return load_dataset(dataset_name, subset, shuffle, seed, val_size)
+
 def format_sft_dataset(
     dataset_source: str,
     prompt_column: str = "prompt",
@@ -86,16 +95,16 @@ def format_sft_dataset(
         output_dir: Directory to save formatted dataset
         cache_dir: Cache directory for HF datasets
         split: Dataset split to use
-        intermediate_tag: Custom intermediate tag (defaults to config.INTERMEDIATE_TAG)
-        final_tag: Custom final tag (defaults to config.FINAL_TAG)
-        
+        intermediate_tag: Custom intermediate tag (defaults to "think")
+        final_tag: Custom final tag (defaults to "answer")
+    
     Returns:
         Path to the formatted dataset
     """
     if intermediate_tag is None:
-        intermediate_tag = INTERMEDIATE_TAG
+        intermediate_tag = "think"
     if final_tag is None:
-        final_tag = FINAL_TAG
+        final_tag = "answer"
         
     # Determine if it's a local file or HF dataset
     is_local_file = os.path.exists(dataset_source)
