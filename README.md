@@ -3,7 +3,7 @@
 </div>
 
 <p align="center">
-    【📄 <a href="https://www.arxiv.org/pdf/2505.16022">arXiv</a> | 🤗 <a href="https://huggingface.co/papers/2505.16022">HuggingFace Papers</a> | 🧠 <a href="https://www.alphaxiv.org/abs/2505.16022">alphaArxiv</a>】
+    【📄 <a href="https://www.arxiv.org/pdf/2505.16022">arXiv</a> | 🤗 <a href="https://huggingface.co/papers/2505.16022">HF Papers</a> | 🧠 <a href="https://www.alphaxiv.org/abs/2505.16022">alphaArxiv</a> | 📦 <a href="https://huggingface.co/collections/thinkwee/novereason-68937ca75331dfaddaf24016">HF Dataset</a>】
 </p>
 
 # NOVER: Incentive Training for Language Models via Verifier-Free Reinforcement Learning
@@ -14,6 +14,7 @@ This is the official implementation of the paper ["NOVER: Incentive Training for
 
 - **NOVER** (**NO-VER**ifier) is a novel reinforcement learning approach for training language models **without requiring explicit verifiers**. 
 - The method can perform DeepSeek R1-Zero-like training on **ANY SFT DATA**, extending reasoning abilities beyond math and coding.
+- We released the NOVEReason dataset collections, including [NOVEReason_2k](https://huggingface.co/datasets/thinkwee/NOVEReason_2k), [NOVEReason_5k](https://huggingface.co/datasets/thinkwee/NOVEReason_5k) and [NOVEReason_full](https://huggingface.co/datasets/thinkwee/NOVEReason_full).
 
 ## Updates
 - [x] Initialize training code  
@@ -25,7 +26,7 @@ This is the official implementation of the paper ["NOVER: Incentive Training for
 - [x] Simplify logging in `CustomGRPOTrainer`  
 - [x] Streamline NCCL logging  
 - [x] Simplify start script  
-- [ ] Clean full NOVEReason data (data has been cleaned, but not all was used in the paper)  
+- [x] Clean full NOVEReason data (data has been cleaned, but not all was used in the paper)  
 - [ ] Add inverse incentive training support  
 - [ ] Add incentive steering support  
 
