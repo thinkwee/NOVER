@@ -180,6 +180,9 @@ def get_training_config(config: DictConfig):
         num_iterations=config.training.num_iterations,
         beta=config.training.beta,
         
+        # Progress bar and logging settings
+        disable_tqdm=False,  # Enable training progress bar
+        
         # Checkpoint and logging
         save_strategy="steps",
         save_steps=config.training.save_steps,

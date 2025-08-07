@@ -12,6 +12,13 @@ from .data_loader import load_dataset
 from .trainer import CustomGRPOTrainer
 from .reward_functions import tag_format_reward, reasoning_reward, efficiency_reward
 
+# Enable progress bars explicitly
+try:
+    from transformers.utils import logging as transformers_logging
+    transformers_logging.enable_progress_bar()
+except ImportError:
+    pass
+
 @hydra.main(version_base=None, config_path="../config", config_name="config")
 def main(config: DictConfig):
     """
