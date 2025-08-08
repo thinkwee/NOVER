@@ -5,7 +5,7 @@ from torch import nn
 from accelerate.utils import gather_object
 from trl.data_utils import is_conversational, maybe_apply_chat_template
 from .reward_functions import set_reference_model, validation_accuracy
-from typing import Union, Any, List
+from typing import Union, Any, List, Optional
 from .utils import safe_wandb_log
 from trl.trainer.callbacks import SyncRefModelCallback
 import copy
@@ -19,6 +19,7 @@ from peft import get_peft_model_state_dict, set_peft_model_state_dict
 import os
 import json
 from datetime import datetime
+from collections import deque
 
 class SyncRefLoraModelCallback(TrainerCallback):
     """
@@ -124,6 +125,16 @@ class CustomGRPOTrainer(GRPOTrainer):
         
         self.validation_results_dir = os.path.join(self.args.output_dir, "validation_results")
         os.makedirs(self.validation_results_dir, exist_ok=True)
+        
+        # Extend the _logs dictionary with the six new fields
+        self._logs.update({
+            "completion_length": deque(maxlen=self.args.generation_batch_size),
+            "reasoning_length": deque(maxlen=self.args.generation_batch_size),
+            "answer_length": deque(maxlen=self.args.generation_batch_size),
+            "full_reasoning_ppl": deque(maxlen=self.args.generation_batch_size),
+            "full_reasoning_ppl_nonorm": deque(maxlen=self.args.generation_batch_size),
+            "reference": deque(maxlen=self.args.generation_batch_size),
+        })
         
     def _setup_reference_model(self):
         
@@ -499,8 +510,9 @@ class CustomGRPOTrainer(GRPOTrainer):
     ) -> dict[str, Union[torch.Tensor, Any]]:
         
         """
-        Just override the original method to add custom hooks.
+        Override to add custom hooks and populate additional fields for wandb summary table.
         """
+        # Call the parent method to get the standard result and populate basic _logs
         result = super()._generate_and_score_completions(inputs)
         
         device = self.accelerator.device
@@ -521,34 +533,21 @@ class CustomGRPOTrainer(GRPOTrainer):
         else:
             completions = completions_text
         
+        # Get rewards and advantages from the result (already calculated by parent method)
+        # The parent method handles the reward calculation and _logs population
+        
+        # Apply our custom hooks for additional analysis
         if hasattr(self, '_logs') and len(self._logs["rewards"]) > 0:
+            # Get the latest rewards and advantages from _logs
             batch_size = len(prompts)
             rewards_per_func = torch.zeros(batch_size, len(self.reward_funcs), device=device)
             
             for i, name in enumerate(self.reward_func_names):
                 if name in self._logs["rewards"]:
-                    reward_data = self._logs["rewards"][name]
-                    
-                    if isinstance(reward_data, (int, float)):
-                        rewards_per_func[:, i] = torch.tensor([reward_data] * batch_size, device=device)
-                    elif isinstance(reward_data, (list, tuple)):
-                        if len(reward_data) >= batch_size:
-                            latest_rewards = reward_data[-batch_size:]
-                            rewards_per_func[:, i] = torch.tensor(latest_rewards, device=device)
-                    elif hasattr(reward_data, '__len__') and hasattr(reward_data, '__getitem__'):
-                        try:
-                            if len(reward_data) >= batch_size:
-                                latest_rewards = []
-                                for j in range(batch_size):
-                                    latest_rewards.append(reward_data[-(j+1)])
-                                latest_rewards.reverse()
-                                rewards_per_func[:, i] = torch.tensor(latest_rewards, device=device)
-                        except (TypeError, IndexError) as e:
-                            print(f"[WARNING] Could not extract reward_data for {name}: {e}")
-                            continue
-                    else:
-                        print(f"[WARNING] reward_data for {name} is not extractable: {type(reward_data)}")
-                        continue
+                    reward_data = list(self._logs["rewards"][name])
+                    if len(reward_data) >= batch_size:
+                        latest_rewards = reward_data[-batch_size:]
+                        rewards_per_func[:, i] = torch.tensor(latest_rewards, device=device)
             
             rewards = (rewards_per_func * self.reward_weights.to(device).unsqueeze(0)).nansum(dim=1)
             
@@ -559,21 +558,197 @@ class CustomGRPOTrainer(GRPOTrainer):
             advantages = rewards - mean_grouped_rewards
             if self.scale_rewards:
                 advantages = advantages / (std_grouped_rewards + 1e-4)
-        else:
-            rewards_per_func = super()._calculate_rewards(inputs, prompts, completions, [])
-            rewards = (rewards_per_func * self.reward_weights.to(device).unsqueeze(0)).nansum(dim=1)
             
-            mean_grouped_rewards = rewards.view(-1, self.num_generations).mean(dim=1)
-            std_grouped_rewards = rewards.view(-1, self.num_generations).std(dim=1)
-            mean_grouped_rewards = mean_grouped_rewards.repeat_interleave(self.num_generations, dim=0)
-            std_grouped_rewards = std_grouped_rewards.repeat_interleave(self.num_generations, dim=0)
-            advantages = rewards - mean_grouped_rewards
-            if self.scale_rewards:
-                advantages = advantages / (std_grouped_rewards + 1e-4)
+            # Apply custom hooks
+            self._apply_custom_hooks(
+                inputs, prompts, completions, completions_text, reference_text, prompts_text,
+                rewards, rewards_per_func, advantages, mean_grouped_rewards, std_grouped_rewards, mode
+            )
         
-        self._apply_custom_hooks(
-            inputs, prompts, completions, completions_text, reference_text, prompts_text,
-            rewards, rewards_per_func, advantages, mean_grouped_rewards, std_grouped_rewards, mode
-        )
+        # Populate the new fields for wandb summary table
+        self._populate_summary_fields(inputs, completions_text, reference_text)
         
         return result
+
+    def _populate_summary_fields(self, inputs, completions_text, reference_text):
+        """
+        Populate the six new fields for the wandb summary table:
+        - completion_length: token count of the full completion
+        - reasoning_length: token count of the reasoning part  
+        - answer_length: token count of the answer part
+        - full_reasoning_ppl: perplexity of the full reasoning
+        - full_reasoning_ppl_nonorm: non-normalized perplexity of the full reasoning
+        - reference: reference text for comparison
+        
+        Args:
+            inputs: Input data
+            completions_text: List of completion texts
+            reference_text: List of reference texts
+        """
+        
+        from .utils import extract_content, calculate_perplexity
+        from accelerate.utils import gather_object
+        
+        # Gather completions and references across all processes
+        all_completions = gather_object(completions_text)
+        all_references = gather_object(reference_text)
+        all_inputs = gather_object(inputs)
+        
+        completion_lengths = []
+        reasoning_lengths = []
+        answer_lengths = []
+        full_reasoning_ppls = []
+        full_reasoning_ppls_nonorm = []
+        references = []
+        
+        for i, completion in enumerate(all_completions):
+            # Calculate completion length (token count)
+            completion_tokens = self.processing_class.encode(completion, add_special_tokens=False)
+            completion_length = len(completion_tokens)
+            
+            # Extract reasoning and answer content
+            reasoning_content = extract_content(completion, self.intermediate_tag)
+            answer_content = extract_content(completion, self.final_tag)
+            
+            # Calculate reasoning and answer lengths (token counts)
+            reasoning_length = len(self.processing_class.encode(reasoning_content, add_special_tokens=False)) if reasoning_content else 0
+            answer_length = len(self.processing_class.encode(answer_content, add_special_tokens=False)) if answer_content else 0
+            
+            # Calculate perplexity for reasoning (if we have reference model and reasoning content)
+            full_reasoning_ppl = float('inf')
+            full_reasoning_ppl_nonorm = float('inf')
+            
+            if reasoning_content and hasattr(self, 'ref_model') and self.ref_model is not None:
+                try:
+                    # Get the question/prompt for perplexity calculation
+                    question = ""
+                    if i < len(all_inputs) and "prompt" in all_inputs[i]:
+                        question = all_inputs[i]["prompt"]
+                    elif i < len(all_references):
+                        # Extract question from reference if available
+                        question = str(all_references[i]) if all_references[i] else ""
+                    
+                    # Get reference answer
+                    reference_answer = ""
+                    if i < len(all_references):
+                        reference_answer = str(all_references[i]) if all_references[i] else ""
+                    
+                    full_reasoning_ppl, full_reasoning_ppl_nonorm = calculate_perplexity(
+                        model=self.ref_model,
+                        tokenizer=self.processing_class,
+                        question=question,
+                        reasoning=reasoning_content,
+                        target=reference_answer,
+                        intermediate_tag=self.intermediate_tag,
+                        final_tag=self.final_tag
+                    )
+                except Exception as e:
+                    print(f"[WARNING] Failed to calculate perplexity for completion {i}: {e}")
+                    full_reasoning_ppl = float('inf')
+                    full_reasoning_ppl_nonorm = float('inf')
+            
+            # Get reference text
+            reference = ""
+            if i < len(all_references):
+                reference = str(all_references[i]) if all_references[i] else ""
+            
+            # Collect all values
+            completion_lengths.append(completion_length)
+            reasoning_lengths.append(reasoning_length)
+            answer_lengths.append(answer_length)
+            full_reasoning_ppls.append(float(full_reasoning_ppl))
+            full_reasoning_ppls_nonorm.append(float(full_reasoning_ppl_nonorm))
+            references.append(reference)
+        
+        # Extend the _logs with new fields
+        self._logs["completion_length"].extend(completion_lengths)
+        self._logs["reasoning_length"].extend(reasoning_lengths)
+        self._logs["answer_length"].extend(answer_lengths)
+        self._logs["full_reasoning_ppl"].extend(full_reasoning_ppls)
+        self._logs["full_reasoning_ppl_nonorm"].extend(full_reasoning_ppls_nonorm)
+        self._logs["reference"].extend(references)
+
+    def log(self, logs: dict[str, float], start_time: Optional[float] = None) -> None:
+        """
+        Override the parent log method to include our custom fields in the wandb completions table.
+        We call the parent's log method for most functionality, but override the wandb table creation.
+        """
+        mode = "train" if self.model.training else "eval"
+        metrics = {key: sum(val) / len(val) for key, val in self._metrics[mode].items()}  # average the metrics
+
+        # This method can be called both in training and evaluation. When called in evaluation, the keys in `logs`
+        # start with "eval_". We need to add the prefix "eval_" to the keys in `metrics` to match the format.
+        if mode == "eval":
+            metrics = {f"eval_{key}": val for key, val in metrics.items()}
+
+        logs = {**logs, **metrics}
+        
+        # Call parent's log method but temporarily disable wandb logging to avoid duplicate tables
+        original_report_to = self.args.report_to
+        self.args.report_to = []  # Temporarily disable wandb reporting
+        
+        super().log(logs, start_time)
+        
+        # Restore original report_to
+        self.args.report_to = original_report_to
+        
+        self._metrics[mode].clear()
+
+        # Handle wandb logging with our extended table
+        if self.accelerator.is_main_process and self.log_completions:
+            # Print to console using rich if available
+            try:
+                from trl.trainer.utils import print_prompt_completions_sample
+                from rich import is_rich_available
+                
+                if is_rich_available():
+                    print_prompt_completions_sample(
+                        self._logs["prompt"],
+                        self._logs["completion"],
+                        self._logs["rewards"],
+                        self._logs["advantages"],
+                        self.state.global_step,
+                        self.num_completions_to_print,
+                    )
+            except ImportError:
+                pass
+
+            # Log to wandb with our extended table (only if wandb is enabled)
+            if self.args.report_to and "wandb" in self.args.report_to and wandb.run is not None:
+                import pandas as pd
+
+                # Create the extended table with all fields
+                table = {
+                    "step": [str(self.state.global_step)] * len(self._logs["prompt"]),
+                    "prompt": list(self._logs["prompt"]),
+                    "completion": list(self._logs["completion"]),
+                    **{k: list(v) for k, v in self._logs["rewards"].items()},
+                    "advantage": list(self._logs["advantages"]),
+                    # Add our six new fields
+                    "completion_length": list(self._logs["completion_length"]),
+                    "reasoning_length": list(self._logs["reasoning_length"]), 
+                    "answer_length": list(self._logs["answer_length"]),
+                    "full_reasoning_ppl": list(self._logs["full_reasoning_ppl"]),
+                    "full_reasoning_ppl_nonorm": list(self._logs["full_reasoning_ppl_nonorm"]),
+                    "reference": list(self._logs["reference"]),
+                }
+
+                if self._logs["image"]:
+                    table["image"] = []
+                    for img in self._logs["image"]:
+                        if img is not None:
+                            # Convert images to wandb Image objects for proper visualization
+                            table["image"].append(wandb.Image(img))
+                        else:
+                            table["image"].append(None)
+
+                df = pd.DataFrame(table)
+                
+                if self.wandb_log_unique_prompts:
+                    df = df.drop_duplicates(subset=["prompt"])
+                
+                # Log the extended completions table to wandb
+                wandb.log({"completions": wandb.Table(dataframe=df)})
+                
+                # Also log the metrics that the parent would have logged
+                wandb.log(logs)
