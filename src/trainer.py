@@ -717,6 +717,27 @@ class CustomGRPOTrainer(GRPOTrainer):
             if self.args.report_to and "wandb" in self.args.report_to and wandb.run is not None:
                 import pandas as pd
 
+                # Calculate perplexity statistics for logging as curves
+                if self._logs["full_reasoning_ppl"]:
+                    # Filter out infinite values for meaningful statistics
+                    valid_ppls = [ppl for ppl in self._logs["full_reasoning_ppl"] if not np.isinf(ppl) and not np.isnan(ppl)]
+                    valid_ppls_nonorm = [ppl for ppl in self._logs["full_reasoning_ppl_nonorm"] if not np.isinf(ppl) and not np.isnan(ppl)]
+                    
+                    if valid_ppls:
+                        # Add perplexity metrics to the main logs for curve visualization
+                        logs["perplexity/mean"] = np.mean(valid_ppls)
+                        logs["perplexity/median"] = np.median(valid_ppls)
+                        logs["perplexity/min"] = np.min(valid_ppls)
+                        logs["perplexity/max"] = np.max(valid_ppls)
+                        logs["perplexity/std"] = np.std(valid_ppls)
+                    
+                    if valid_ppls_nonorm:
+                        logs["perplexity_nonorm/mean"] = np.mean(valid_ppls_nonorm)
+                        logs["perplexity_nonorm/median"] = np.median(valid_ppls_nonorm)
+                        logs["perplexity_nonorm/min"] = np.min(valid_ppls_nonorm)
+                        logs["perplexity_nonorm/max"] = np.max(valid_ppls_nonorm)
+                        logs["perplexity_nonorm/std"] = np.std(valid_ppls_nonorm)
+
                 # Create the extended table with all fields
                 table = {
                     "step": [str(self.state.global_step)] * len(self._logs["prompt"]),
