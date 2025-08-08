@@ -61,9 +61,29 @@ training:
   ref_model_sync_steps: 100  # Steps between reference model synchronization
 
 reward:
-  tag_format_reward_weight: 1.0  # Weight for tag format reward component
-  reasoning_reward_weight: 1.0  # Weight for reasoning reward component
-  efficiency_reward_weight: 1.0  # Weight for efficiency reward component
+  functions:
+    - type: "tag_format"
+      weight: 1.0
+    - type: "reasoning"
+      weight: 1.0
+    - type: "efficiency"
+      weight: 1.0
+#    - type: "rule_based"
+#      weight: 0.5
+#      rules:
+#        - name: "contains_keyword"
+#          pattern: "because"
+#          reward: 0.5
+#        - name: "length_check"
+#          min_length: 10
+#          max_length: 100
+#          reward: 0.5
+#    - type: "llm_as_judge"
+#      weight: 1.5
+#      provider: "openai"
+#      model: "gpt-4"
+#      api_key: "${env:OPENAI_API_KEY}"
+#      prompt_template: "Judge the following response... {completion}"
 
 vllm:
   use_vllm: true  # Whether to use vLLM for efficient inference

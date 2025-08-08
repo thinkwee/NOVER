@@ -10,7 +10,8 @@ from .config_manager import (
 import hydra
 from .data_loader import load_dataset
 from .trainer import CustomGRPOTrainer
-from .reward_functions import tag_format_reward, reasoning_reward, efficiency_reward
+from .reward_functions import tag_format_reward, reasoning_reward, efficiency_reward, rule_based_reward, llm_as_judge_reward
+import functools
 
 # Enable progress bars explicitly
 try:
@@ -18,6 +19,70 @@ try:
     transformers_logging.enable_progress_bar()
 except ImportError:
     pass
+
+def create_reward_factory(config: DictConfig):
+    """
+    Creates reward functions and weights based on the provided configuration.
+    """
+
+    # Map reward types to functions
+    reward_function_map = {
+        "tag_format": tag_format_reward,
+        "reasoning": reasoning_reward,
+        "efficiency": efficiency_reward,
+        "rule_based": rule_based_reward,
+        "llm_as_judge": llm_as_judge_reward,
+    }
+
+    reward_funcs = []
+    reward_weights = []
+
+    for reward_config in config.reward.functions:
+        reward_type = reward_config.type
+        weight = reward_config.weight
+
+        if weight == 0:
+            print(f"[INFO] Skipping reward function '{reward_type}' as its weight is 0.")
+            continue
+
+        if reward_type not in reward_function_map:
+            print(f"[WARNING] Unknown reward function type: {reward_type}. Skipping.")
+            continue
+
+        base_reward_func = reward_function_map[reward_type]
+
+        # Create a wrapper to pass specific arguments from the config
+        if reward_type in ["tag_format", "reasoning", "efficiency"]:
+            wrapped_func = functools.partial(
+                base_reward_func,
+                intermediate_tag=config.dataset.intermediate_tag,
+                final_tag=config.dataset.final_tag
+            )
+        elif reward_type == "rule_based":
+            wrapped_func = functools.partial(
+                base_reward_func,
+                rules=reward_config.rules
+            )
+        elif reward_type == "llm_as_judge":
+            # Pass the entire sub-config for the judge
+            judge_params = {k: v for k, v in reward_config.items() if k not in ['type', 'weight']}
+            wrapped_func = functools.partial(
+                base_reward_func,
+                **judge_params
+            )
+        else:
+            # Default case for functions that don't need special params
+            wrapped_func = base_reward_func
+
+        # Set a descriptive name for logging purposes
+        wrapped_func.__name__ = reward_config.get("name", f"{reward_type.replace('_', ' ').title()} Reward")
+
+        reward_funcs.append(wrapped_func)
+        reward_weights.append(weight)
+
+        print(f"[INFO] Initialized reward function: {wrapped_func.__name__} with weight {weight}")
+
+    return reward_funcs, reward_weights
 
 @hydra.main(version_base=None, config_path="../config", config_name="config")
 def main(config: DictConfig):
@@ -62,39 +127,8 @@ def main(config: DictConfig):
     # Get PEFT config from the new system
     peft_config = get_peft_config(config)
     
-    # Create reward functions with custom tags
-    def tag_format_reward_wrapper(completions, **kwargs):
-        return tag_format_reward(
-            completions, 
-            intermediate_tag=config.dataset.intermediate_tag, 
-            final_tag=config.dataset.final_tag, 
-            **kwargs
-        )
-    tag_format_reward_wrapper.__name__ = "Tag Format Reward"
-    
-    def reasoning_reward_wrapper(completions, **kwargs):
-        return reasoning_reward(
-            completions, 
-            intermediate_tag=config.dataset.intermediate_tag, 
-            final_tag=config.dataset.final_tag, 
-            **kwargs
-        )
-    reasoning_reward_wrapper.__name__ = "Reasoning Reward"
-    
-    def efficiency_reward_wrapper(completions, **kwargs):
-        return efficiency_reward(
-            completions, 
-            intermediate_tag=config.dataset.intermediate_tag, 
-            final_tag=config.dataset.final_tag, 
-            **kwargs
-        )
-    efficiency_reward_wrapper.__name__ = "Efficiency Reward"
-    
-    reward_funcs = [
-        tag_format_reward_wrapper,
-        reasoning_reward_wrapper,
-        efficiency_reward_wrapper
-    ]
+    # Create reward functions and weights using the factory
+    reward_funcs, reward_weights = create_reward_factory(config)
     
     # Initialize trainer with custom tags from config
     trainer = CustomGRPOTrainer(
@@ -104,6 +138,7 @@ def main(config: DictConfig):
         train_dataset=train_dataset,
         eval_dataset=eval_dataset,
         reward_funcs=reward_funcs,
+        reward_weights=reward_weights,
         custom_tags={
             "intermediate_tag": config.dataset.intermediate_tag,
             "final_tag": config.dataset.final_tag

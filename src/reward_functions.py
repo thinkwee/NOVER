@@ -5,6 +5,13 @@ import torch
 from .utils import extract_content, calculate_perplexity, extract_all_content, safe_wandb_log
 import pandas as pd
 import wandb
+import asyncio
+import aiohttp
+from dotenv import load_dotenv
+import os
+
+# Load environment variables from .env file
+load_dotenv()
 
 _ref_model = None
 _ref_tokenizer = None
@@ -113,6 +120,143 @@ def tag_format_reward(completions: List[str], intermediate_tag: str = "think", f
         except Exception as e:
             print(f"Warning: Wandb logging failed: {str(e)}")
     
+    return rewards
+
+# LLM as Judge Reward Function
+# Note: To use this, you need to install openai, google-generativeai, aiohttp, and python-dotenv
+# and have your API keys in a .env file (e.g., OPENAI_API_KEY="...")
+
+def _parse_score_from_response(response_text: str) -> float:
+    """Parses a float score from the judge's response."""
+    # Search for a floating point number, allowing for optional leading text and trailing score indicators.
+    match = re.search(r"(\d\.\d+)", response_text)
+    if match:
+        try:
+            score = float(match.group(1))
+            return max(0.0, min(10.0, score)) # Clamp score, assuming a 0-10 scale for now
+        except (ValueError, IndexError):
+            return 0.0
+    return 0.0
+
+async def _get_openai_style_reward(session: aiohttp.ClientSession, completion: str, config: dict) -> (float, str):
+    """Helper for OpenAI and OpenAI-compatible APIs (like vLLM)."""
+    provider = config.get("provider")
+    model = config.get("model")
+    prompt_template = config.get("prompt_template")
+
+    if provider == "vllm":
+        base_url = f"http://{config.get('host', 'localhost')}:{config.get('port', 8000)}/v1"
+        api_key = "EMPTY"
+    else: # openai
+        base_url = "https://api.openai.com/v1"
+        api_key = os.getenv("OPENAI_API_KEY")
+
+    if not api_key and provider == "openai":
+        print("[WARNING] OPENAI_API_KEY not found in environment variables.")
+        return 0.0, "API key not found"
+
+    headers = {"Authorization": f"Bearer {api_key}"}
+    prompt = prompt_template.format(completion=completion)
+    payload = {
+        "model": model,
+        "messages": [{"role": "user", "content": prompt}],
+        "temperature": 0.0,
+        "max_tokens": 30, # Increased slightly for more robust parsing
+    }
+
+    try:
+        async with session.post(f"{base_url}/chat/completions", json=payload, headers=headers, timeout=30) as response:
+            if response.status == 200:
+                data = await response.json()
+                content = data['choices'][0]['message']['content']
+                score = _parse_score_from_response(content)
+                return score, content
+            else:
+                error_text = await response.text()
+                print(f"[{provider.upper()}] API Error {response.status}: {error_text}")
+                return 0.0, f"API Error {response.status}"
+    except Exception as e:
+        print(f"[{provider.upper()}] Exception: {e}")
+        return 0.0, str(e)
+
+def _sync_gemini_call(completion: str, config: dict) -> (float, str):
+    """Synchronous helper for Gemini, to be run in a thread pool."""
+    try:
+        import google.generativeai as genai
+        api_key = os.getenv("GEMINI_API_KEY")
+        if not api_key:
+            print("[WARNING] GEMINI_API_KEY not found in environment variables.")
+            return 0.0, "API key not found"
+
+        genai.configure(api_key=api_key)
+        model = genai.GenerativeModel(config["model"])
+        prompt = config["prompt_template"].format(completion=completion)
+        response = model.generate_content(prompt)
+        score = _parse_score_from_response(response.text)
+        return score, response.text
+    except Exception as e:
+        print(f"[GEMINI] Exception: {e}")
+        return 0.0, str(e)
+
+async def _get_gemini_reward(completion: str, config: dict) -> (float, str):
+    """Async wrapper for the synchronous Gemini call."""
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(None, _sync_gemini_call, completion, config)
+
+
+async def _get_all_judge_rewards(completions: List[str], config: dict) -> List[tuple[float, str]]:
+    """Fetches all rewards asynchronously."""
+    provider = config.get("provider")
+    tasks = []
+
+    if provider in ["openai", "vllm"]:
+        async with aiohttp.ClientSession() as session:
+            for completion in completions:
+                tasks.append(_get_openai_style_reward(session, completion, config))
+            return await asyncio.gather(*tasks)
+    elif provider == "gemini":
+        for completion in completions:
+            tasks.append(_get_gemini_reward(completion, config))
+        return await asyncio.gather(*tasks)
+    else:
+        print(f"[WARNING] LLM-as-judge provider '{provider}' not supported. Returning 0 rewards.")
+        return [(0.0, "Unsupported provider")] * len(completions)
+
+def llm_as_judge_reward(completions: List[str], **kwargs) -> List[float]:
+    """
+    Uses an LLM as a judge to score completions based on a prompt.
+    The configuration for the judge is passed via kwargs, which are the parameters
+    from the config file (e.g., provider, model, prompt_template).
+    """
+    judge_config = kwargs
+
+    results = asyncio.run(_get_all_judge_rewards(completions, judge_config))
+
+    rewards = [res[0] for res in results]
+    raw_responses = [res[1] for res in results]
+
+    if wandb.run is not None and "global_step" in kwargs:
+        try:
+            step = kwargs.get("global_step", 0)
+
+            log_dict = {
+                f"llm_as_judge_reward/mean": np.mean(rewards),
+                f"llm_as_judge_reward/std": np.std(rewards),
+            }
+            safe_wandb_log(log_dict, step=step)
+
+            table_data = {
+                "step": [str(step)] * len(completions),
+                "completion": completions,
+                "judge_raw_response": raw_responses,
+                "parsed_reward": rewards,
+            }
+            df = pd.DataFrame(table_data)
+            safe_wandb_log({"LLM-as-Judge Details": wandb.Table(dataframe=df)}, step=step)
+
+        except Exception as e:
+            print(f"Warning: Wandb logging for llm_as_judge_reward failed: {str(e)}")
+
     return rewards
 
 def precompute_completion_data(completions, intermediate_tag=None, final_tag=None, **kwargs):
@@ -563,3 +707,99 @@ def validation_accuracy(completions, **kwargs):
             print(f"Warning: Wandb logging failed: {str(e)}")
     
     return accuracy_scores
+
+def rule_based_reward(completions: List[str], rules: List[dict], **kwargs) -> List[float]:
+    """
+    Calculates rewards based on a set of user-defined rules.
+
+    Each rule in the `rules` list should be a dictionary containing:
+    - 'type': The type of rule (e.g., 'keyword', 'regex', 'length').
+    - 'name': A unique name for the rule for logging purposes.
+    - 'pattern': The pattern to match (for 'keyword' and 'regex').
+    - 'min'/'max': The length boundaries (for 'length').
+    - 'reward': The reward to apply if the rule is met. Can be positive or negative.
+
+    Args:
+        completions: A list of generated texts.
+        rules: A list of rule dictionaries from the config.
+        **kwargs: Additional arguments.
+
+    Returns:
+        A list of reward scores.
+    """
+    rewards = []
+
+    # For logging
+    rule_details_log = {rule.get('name', f"{rule['type']}_{i}"): [] for i, rule in enumerate(rules)}
+
+    for completion in completions:
+        total_reward = 0.0
+
+        for i, rule in enumerate(rules):
+            rule_name = rule.get('name', f"{rule['type']}_{i}")
+            reward_for_rule = 0.0
+
+            try:
+                rule_type = rule["type"]
+
+                if rule_type == "keyword":
+                    pattern = rule["pattern"]
+                    reward_value = rule.get("reward", 0.0)
+                    if pattern in completion:
+                        reward_for_rule = reward_value
+
+                elif rule_type == "regex":
+                    pattern = rule["pattern"]
+                    reward_value = rule.get("reward", 0.0)
+                    if re.search(pattern, completion):
+                        reward_for_rule = reward_value
+
+                elif rule_type == "length":
+                    min_len = rule.get("min", 0)
+                    max_len = rule.get("max", float('inf'))
+                    reward_value = rule.get("reward", 0.0)
+                    completion_len = len(completion)
+                    if min_len <= completion_len <= max_len:
+                        reward_for_rule = reward_value
+
+            except KeyError as e:
+                print(f"[WARNING] Rule-based reward is missing a required key: {e} in rule {rule}. Skipping this rule.")
+            except Exception as e:
+                print(f"[WARNING] Error processing rule {rule}: {e}. Skipping this rule.")
+
+            total_reward += reward_for_rule
+            if rule_name in rule_details_log:
+                rule_details_log[rule_name].append(reward_for_rule)
+
+        rewards.append(total_reward)
+
+    if wandb.run is not None and "global_step" in kwargs:
+        try:
+            step = kwargs.get("global_step", 0)
+
+            log_dict = {
+                f"rule_based_reward/mean": np.mean(rewards),
+                f"rule_based_reward/std": np.std(rewards),
+            }
+
+            # Log individual rule contributions
+            for name, values in rule_details_log.items():
+                if values:
+                    log_dict[f"rule_based_reward/{name}_mean"] = np.mean(values)
+
+            safe_wandb_log(log_dict, step=step)
+
+            # Create a detailed table for wandb
+            table_data = {
+                "step": [str(step)] * len(completions),
+                "completion": completions,
+                "total_rule_reward": rewards,
+                **rule_details_log
+            }
+            df = pd.DataFrame(table_data)
+            safe_wandb_log({"Rule-Based Reward Details": wandb.Table(dataframe=df)}, step=step)
+
+        except Exception as e:
+            print(f"Warning: Wandb logging for rule_based_reward failed: {str(e)}")
+
+    return rewards
