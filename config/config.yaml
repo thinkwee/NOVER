@@ -69,15 +69,8 @@ reward:
     - type: "efficiency"
       weight: 1.0
 #    - type: "rule_based"
+#      name: "Custom Rule Reward" # Customize the name for logging
 #      weight: 0.5
-#      rules:
-#        - name: "contains_keyword"
-#          pattern: "because"
-#          reward: 0.5
-#        - name: "length_check"
-#          min_length: 10
-#          max_length: 100
-#          reward: 0.5
 #    - type: "llm_as_judge"
 #      weight: 1.5
 #      provider: "openai"

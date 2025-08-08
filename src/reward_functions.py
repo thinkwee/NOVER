@@ -708,98 +708,57 @@ def validation_accuracy(completions, **kwargs):
     
     return accuracy_scores
 
-def rule_based_reward(completions: List[str], rules: List[dict], **kwargs) -> List[float]:
+def rule_based_reward(completions: List[str], **kwargs) -> List[float]:
     """
-    Calculates rewards based on a set of user-defined rules.
+    A skeleton function for users to define their own rule-based rewards.
 
-    Each rule in the `rules` list should be a dictionary containing:
-    - 'type': The type of rule (e.g., 'keyword', 'regex', 'length').
-    - 'name': A unique name for the rule for logging purposes.
-    - 'pattern': The pattern to match (for 'keyword' and 'regex').
-    - 'min'/'max': The length boundaries (for 'length').
-    - 'reward': The reward to apply if the rule is met. Can be positive or negative.
+    This function can be modified directly with custom Python code to implement
+    any desired reward logic. The 'name' of this reward in config.yaml should
+    be updated to reflect the custom logic implemented.
 
     Args:
-        completions: A list of generated texts.
-        rules: A list of rule dictionaries from the config.
-        **kwargs: Additional arguments.
+        completions: A list of generated texts from the model.
+        **kwargs: Additional keyword arguments passed from the trainer,
+                  such as `prompts`, `reference`, `global_step`.
 
     Returns:
-        A list of reward scores.
+        A list of reward scores, one for each completion.
+
+    Example:
+        # Penalize completions that are too short.
+        rewards = []
+        for comp in completions:
+            if len(comp) < 50:
+                rewards.append(-1.0)
+            else:
+                rewards.append(0.0)
+        return rewards
     """
     rewards = []
 
-    # For logging
-    rule_details_log = {rule.get('name', f"{rule['type']}_{i}"): [] for i, rule in enumerate(rules)}
+    # --- USER-DEFINED REWARD LOGIC STARTS HERE ---
+    #
+    # This is a placeholder. Replace this with your own logic.
+    # The following example gives a small reward if the word "because" is present.
 
     for completion in completions:
-        total_reward = 0.0
+        if "because" in completion.lower():
+            rewards.append(0.5)
+        else:
+            rewards.append(0.0)
 
-        for i, rule in enumerate(rules):
-            rule_name = rule.get('name', f"{rule['type']}_{i}")
-            reward_for_rule = 0.0
+    # --- USER-DEFINED REWARD LOGIC ENDS HERE ---
 
-            try:
-                rule_type = rule["type"]
-
-                if rule_type == "keyword":
-                    pattern = rule["pattern"]
-                    reward_value = rule.get("reward", 0.0)
-                    if pattern in completion:
-                        reward_for_rule = reward_value
-
-                elif rule_type == "regex":
-                    pattern = rule["pattern"]
-                    reward_value = rule.get("reward", 0.0)
-                    if re.search(pattern, completion):
-                        reward_for_rule = reward_value
-
-                elif rule_type == "length":
-                    min_len = rule.get("min", 0)
-                    max_len = rule.get("max", float('inf'))
-                    reward_value = rule.get("reward", 0.0)
-                    completion_len = len(completion)
-                    if min_len <= completion_len <= max_len:
-                        reward_for_rule = reward_value
-
-            except KeyError as e:
-                print(f"[WARNING] Rule-based reward is missing a required key: {e} in rule {rule}. Skipping this rule.")
-            except Exception as e:
-                print(f"[WARNING] Error processing rule {rule}: {e}. Skipping this rule.")
-
-            total_reward += reward_for_rule
-            if rule_name in rule_details_log:
-                rule_details_log[rule_name].append(reward_for_rule)
-
-        rewards.append(total_reward)
-
+    # Optional: Add wandb logging for your custom reward.
     if wandb.run is not None and "global_step" in kwargs:
         try:
             step = kwargs.get("global_step", 0)
-
             log_dict = {
-                f"rule_based_reward/mean": np.mean(rewards),
-                f"rule_based_reward/std": np.std(rewards),
+                "custom_rule_reward/mean": np.mean(rewards),
+                "custom_rule_reward/std": np.std(rewards),
             }
-
-            # Log individual rule contributions
-            for name, values in rule_details_log.items():
-                if values:
-                    log_dict[f"rule_based_reward/{name}_mean"] = np.mean(values)
-
             safe_wandb_log(log_dict, step=step)
-
-            # Create a detailed table for wandb
-            table_data = {
-                "step": [str(step)] * len(completions),
-                "completion": completions,
-                "total_rule_reward": rewards,
-                **rule_details_log
-            }
-            df = pd.DataFrame(table_data)
-            safe_wandb_log({"Rule-Based Reward Details": wandb.Table(dataframe=df)}, step=step)
-
         except Exception as e:
-            print(f"Warning: Wandb logging for rule_based_reward failed: {str(e)}")
+            print(f"Warning: Wandb logging for custom rule_based_reward failed: {str(e)}")
 
     return rewards

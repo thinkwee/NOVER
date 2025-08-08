@@ -58,11 +58,6 @@ def create_reward_factory(config: DictConfig):
                 intermediate_tag=config.dataset.intermediate_tag,
                 final_tag=config.dataset.final_tag
             )
-        elif reward_type == "rule_based":
-            wrapped_func = functools.partial(
-                base_reward_func,
-                rules=reward_config.rules
-            )
         elif reward_type == "llm_as_judge":
             # Pass the entire sub-config for the judge
             judge_params = {k: v for k, v in reward_config.items() if k not in ['type', 'weight']}
