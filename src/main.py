@@ -104,9 +104,10 @@ def main(config: DictConfig):
         train_dataset=train_dataset,
         eval_dataset=eval_dataset,
         reward_funcs=reward_funcs,
-        custom_tags={
+        custom_config={
             "intermediate_tag": config.dataset.intermediate_tag,
-            "final_tag": config.dataset.final_tag
+            "final_tag": config.dataset.final_tag,
+            "force_chat_template": config.dataset.force_chat_template
         }
     )
     

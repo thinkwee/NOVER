@@ -14,6 +14,28 @@ def set_reference_model(model, tokenizer):
     _ref_model = model
     _ref_tokenizer = tokenizer
 
+def _extract_completion_text(completion):
+    """
+    Extract text content from completion, handling both string and message formats.
+    
+    Args:
+        completion: Either a string or a list of messages
+        
+    Returns:
+        str: The completion text
+    """
+    if isinstance(completion, list) and len(completion) > 0 and isinstance(completion[0], dict):
+        # Extract content from assistant message
+        for message in completion:
+            if message.get("role") == "assistant":
+                return message.get("content", "")
+        # No assistant message found
+        return ""
+    elif isinstance(completion, str):
+        return completion
+    else:
+        return str(completion)
+
 def tag_format_reward(completions: List[str], intermediate_tag: str = "think", final_tag: str = "answer", **kwargs) -> List[float]:
     """
     Reward function for proper tag formatting.
@@ -32,14 +54,17 @@ def tag_format_reward(completions: List[str], intermediate_tag: str = "think", f
     tag_details = []
     
     for completion in completions:
+        # Convert completion to string if it's in message format
+        completion_text = _extract_completion_text(completion)
+        
         reward = 0.0
         
-        reasoning_content = extract_content(completion, intermediate_tag)
-        answer_content = extract_content(completion, final_tag)
+        reasoning_content = extract_content(completion_text, intermediate_tag)
+        answer_content = extract_content(completion_text, final_tag)
         
         expected = f"<{intermediate_tag}>{reasoning_content}</{intermediate_tag}><{final_tag}>{answer_content}</{final_tag}>"
         
-        completion_no_whitespace = re.sub(r'\s+', '', completion)
+        completion_no_whitespace = re.sub(r'\s+', '', completion_text)
         expected_no_whitespace = re.sub(r'\s+', '', expected)
         
         is_perfect_format = completion_no_whitespace == expected_no_whitespace
@@ -87,7 +112,7 @@ def tag_format_reward(completions: List[str], intermediate_tag: str = "think", f
             table = {
                 "step": [str(step)] * len(completions),
                 "question": [question for _ in range(len(completions))],
-                "completion": [comp for comp in completions],
+                "completion": [_extract_completion_text(comp) for comp in completions],
                 "reference": [reference_answer for _ in range(len(completions))],
                 "tag_reward": rewards,
                 "is_perfect_format": [detail["is_perfect_format"] for detail in tag_details],
@@ -176,7 +201,7 @@ def precompute_completion_data(completions, intermediate_tag=None, final_tag=Non
                     "sentences": [],
                     "length": 0,
                     "full_reasoning_ppl": float('inf'),
-                    "completion": completions[i]
+                    "completion": _extract_completion_text(completions[i])
                 })
                 continue
             reasoning = reasoning[0]
@@ -197,7 +222,7 @@ def precompute_completion_data(completions, intermediate_tag=None, final_tag=Non
                 "length": float(reasoning_length),
                 "full_reasoning_ppl": float(full_reasoning_ppl),
                 "full_reasoning_ppl_nonorm": float(full_reasoning_ppl_nonorm),
-                "completion": completions[i]
+                "completion": _extract_completion_text(completions[i])
             })
     
     return completion_data, question, reference_answer, tag_rewards
@@ -266,7 +291,7 @@ def efficiency_reward(completions, **kwargs):
             table = {
                 "step": [str(step)] * len(completions),
                 "question": [question for _ in range(len(completions))],
-                "completion": [comp for comp in completions],
+                "completion": [_extract_completion_text(comp) for comp in completions],
                 "reference": [reference_answer for _ in range(len(completions))],
                 "efficiency_reward": rewards,
             }
@@ -391,7 +416,7 @@ def reasoning_reward(completions, **kwargs):
             table = {
                 "step": [str(step)] * len(completions),
                 "question": [question for _ in range(len(completions))],
-                "completion": [comp for comp in completions],
+                "completion": [_extract_completion_text(comp) for comp in completions],
                 "reference": [reference_answer for _ in range(len(completions))],
                 "ppl_norm": ppl_values,
                 "ppl_nonorm": ppl_nonorm_values,
@@ -549,9 +574,9 @@ def validation_accuracy(completions, **kwargs):
             table = {
                 "step": [str(step)] * len(completions),
                 "question": [question for _ in range(len(completions))],
-                "completion": [comp for comp in completions],
+                "completion": [_extract_completion_text(comp) for comp in completions],
                 "reference": ref_list,
-                "extracted_answer": [extract_content(comp, "answer") for comp in completions],
+                "extracted_answer": [extract_content(_extract_completion_text(comp), "answer") for comp in completions],
                 "edit_distance_score": accuracy_scores,
             }
             

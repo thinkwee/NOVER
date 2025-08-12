@@ -13,6 +13,7 @@ dataset:
   validation_size: 0  # Size of validation split (0 for no validation split)
   intermediate_tag: "think"  # Tag used to mark intermediate reasoning steps in the dataset
   final_tag: "answer"  # Tag used to mark final answers in the dataset
+  force_chat_template: false  # Whether to force conversational formatting by wrapping plain-text prompts into single user messages
 
 model:
   name: "YOUR_MODEL_NAME"  # Name of the base model to load from HuggingFace

@@ -34,12 +34,27 @@ def extract_content(text: str, tag: str = None) -> str:
     Extract content between tags.
 
     Args:
-        text: The text to extract content from
+        text: The text to extract content from (can be string or message list)
         tag: The tag to extract content from
         
     Returns:
         str: The content between the tags
     """
+    # Handle conversational format (list of messages)
+    if isinstance(text, list) and len(text) > 0 and isinstance(text[0], dict):
+        # Extract content from assistant message
+        for message in text:
+            if message.get("role") == "assistant":
+                text = message.get("content", "")
+                break
+        else:
+            # No assistant message found
+            return ""
+    
+    # Ensure we have a string
+    if not isinstance(text, str):
+        text = str(text)
+    
     if tag is None:
         tag = DEFAULT_FINAL_TAG
     pattern = f"<{tag}>(.*?)</{tag}>"
@@ -51,12 +66,27 @@ def extract_all_content(text: str, tag: str = None) -> list:
     Extract all content between tags.
 
     Args:
-        text: The text to extract content from
+        text: The text to extract content from (can be string or message list)
         tag: The tag to extract content from
         
     Returns:
         list: The content between the tags
     """
+    # Handle conversational format (list of messages)
+    if isinstance(text, list) and len(text) > 0 and isinstance(text[0], dict):
+        # Extract content from assistant message
+        for message in text:
+            if message.get("role") == "assistant":
+                text = message.get("content", "")
+                break
+        else:
+            # No assistant message found
+            return []
+    
+    # Ensure we have a string
+    if not isinstance(text, str):
+        text = str(text)
+    
     if tag is None:
         tag = DEFAULT_INTERMEDIATE_TAG
     pattern = f"<{tag}>(.*?)</{tag}>"

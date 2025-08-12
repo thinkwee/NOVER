@@ -89,12 +89,12 @@ class CustomGRPOTrainer(GRPOTrainer):
     
     Args:
         *args: Arguments passed to the parent GRPOTrainer
-        custom_tags (dict, optional): Custom tags for intermediate and final outputs.
-            Defaults to {"intermediate_tag": "think", "final_tag": "answer"}
+        custom_config (dict, optional): Custom configuration that goes beyond the trl's GRPOConfig.
+            Defaults to {"intermediate_tag": "think", "final_tag": "answer", "force_chat_template": False}
         **kwargs: Keyword arguments passed to the parent GRPOTrainer
     
     Attributes:
-        custom_tags (dict): Custom tags configuration
+        custom_config (dict): Custom configuration
         intermediate_tag (str): Tag for intermediate outputs (default: "think")
         final_tag (str): Tag for final outputs (default: "answer")
         ref_model: Reference model for reward calculation
@@ -102,10 +102,11 @@ class CustomGRPOTrainer(GRPOTrainer):
         diversity_steps (list): Training steps corresponding to diversity scores
         validation_results_dir (str): Directory for saving validation results
     """
-    def __init__(self, *args, custom_tags=None, **kwargs):
-        self.custom_tags = custom_tags or {}
-        self.intermediate_tag = self.custom_tags.get("intermediate_tag", "think")
-        self.final_tag = self.custom_tags.get("final_tag", "answer")
+    def __init__(self, *args, custom_config=None, **kwargs):
+        self.custom_config = custom_config or {}
+        self.intermediate_tag = self.custom_config.get("intermediate_tag", "think")
+        self.final_tag = self.custom_config.get("final_tag", "answer")
+        self.force_chat_template = self.custom_config.get("force_chat_template", False)
         
         super().__init__(*args, **kwargs)
 
@@ -512,6 +513,48 @@ class CustomGRPOTrainer(GRPOTrainer):
         """
         Override to add custom hooks and populate additional fields for wandb summary table.
         """
+        # Optionally force chat template by wrapping plain-text prompts into a single user turn
+        try:
+            if self.force_chat_template and not is_conversational(inputs[0]):
+                wrapped_inputs = []
+                for example in inputs:
+                    new_example = dict(example)
+                    prompt_value = new_example.get("prompt")
+                    if isinstance(prompt_value, str):
+                        new_example["prompt"] = [{"role": "user", "content": prompt_value}]
+                    wrapped_inputs.append(new_example)
+                inputs = wrapped_inputs
+        except Exception:
+            pass
+
+        # Store original inputs for later reference extraction
+        original_inputs = inputs.copy()
+
+        # Sanitize inputs to avoid invalid keys for maybe_apply_chat_template
+        try:
+            # Convert NOVER format (prompt, reference) to TRL format (prompt, completion)
+            sanitized_inputs = []
+            for example in inputs:
+                sanitized = {"prompt": example["prompt"]}
+                # Convert 'reference' to 'completion' for TRL compatibility
+                if "reference" in example:
+                    reference_value = example["reference"]
+                    # If we're using chat template and prompt is now messages, wrap reference too
+                    if self.force_chat_template and is_conversational({"prompt": example["prompt"]}):
+                        if isinstance(reference_value, str):
+                            sanitized["completion"] = [{"role": "assistant", "content": reference_value}]
+                        else:
+                            sanitized["completion"] = reference_value
+                    else:
+                        sanitized["completion"] = reference_value
+                # Keep other supported keys
+                for key in ["image", "tools"]:
+                    if key in example:
+                        sanitized[key] = example[key]
+                sanitized_inputs.append(sanitized)
+            inputs = sanitized_inputs
+        except Exception:
+            pass
         # Call the parent method to get the standard result and populate basic _logs
         result = super()._generate_and_score_completions(inputs)
         
@@ -520,7 +563,30 @@ class CustomGRPOTrainer(GRPOTrainer):
         
         prompts = [x["prompt"] for x in inputs]
         prompts_text = [maybe_apply_chat_template(example, self.processing_class)["prompt"] for example in inputs]
-        reference_text = [maybe_apply_chat_template(example, self.processing_class)["reference"] for example in inputs]
+        
+        # ensure prompts_text contains only strings
+        for i, pt in enumerate(prompts_text):
+            if not isinstance(pt, str):
+                # Convert to string if possible
+                if hasattr(pt, '__str__'):
+                    prompts_text[i] = str(pt)
+                else:
+                    prompts_text[i] = ""
+        
+        # Use original inputs for reference extraction since we renamed 'reference' to 'completion'
+        # Create sanitized original inputs for reference extraction
+        sanitized_original_inputs = []
+        for orig_example in original_inputs:
+            sanitized_orig = {"prompt": orig_example["prompt"]}
+            if "reference" in orig_example:
+                sanitized_orig["reference"] = orig_example["reference"]
+            # Keep other supported keys
+            for key in ["image", "tools"]:
+                if key in orig_example:
+                    sanitized_orig[key] = orig_example[key]
+            sanitized_original_inputs.append(sanitized_orig)
+        
+        reference_text = [maybe_apply_chat_template(orig_example, self.processing_class).get("reference", "") for orig_example in sanitized_original_inputs]
         
         completion_ids = result["completion_ids"]
         
@@ -624,6 +690,12 @@ class CustomGRPOTrainer(GRPOTrainer):
                     question = ""
                     if i < len(all_inputs) and "prompt" in all_inputs[i]:
                         question = all_inputs[i]["prompt"]
+                        # If prompt is conversational, render it to text using chat template
+                        if isinstance(question, list):
+                            try:
+                                question = maybe_apply_chat_template(all_inputs[i], self.processing_class)["prompt"]
+                            except Exception:
+                                question = ""
                     elif i < len(all_references):
                         # Extract question from reference if available
                         question = str(all_references[i]) if all_references[i] else ""
