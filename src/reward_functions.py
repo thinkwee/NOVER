@@ -204,12 +204,26 @@ def precompute_completion_data(completions, intermediate_tag=None, final_tag=Non
                     "completion": _extract_completion_text(completions[i])
                 })
                 continue
+            
+            if len(reasoning) == 0:
+                completion_data.append({
+                    "valid": False,
+                    "reasoning": "",
+                    "answer": "",
+                    "sentences": [],
+                    "length": 0,
+                    "full_reasoning_ppl": float('inf'),
+                    "completion": _extract_completion_text(completions[i])
+                })
+                continue
+                
             reasoning = reasoning[0]
             
             reasoning_length = len(_ref_tokenizer.encode(reasoning))
             
             full_reasoning_ppl, full_reasoning_ppl_nonorm = calculate_perplexity(
-                _ref_model, _ref_tokenizer, question=question, reasoning=reasoning, target=reference_answer
+                _ref_model, _ref_tokenizer, question=question, reasoning=reasoning, target=reference_answer,
+                intermediate_tag=intermediate_tag, final_tag=final_tag
             )
             
             sentences = [s.strip() for s in re.split(r'(?<=[.!?])\s+', reasoning) if s.strip()]
@@ -235,6 +249,10 @@ def efficiency_reward(completions, **kwargs):
         completions: List of completions
         **kwargs: Additional keyword arguments
     """
+    # Get tags from kwargs
+    intermediate_tag = kwargs.get("intermediate_tag", "think")
+    final_tag = kwargs.get("final_tag", "answer")
+    
     completion_data, question, reference_answer, _ = precompute_completion_data(completions, **kwargs)
     
     rewards = [0.0] * len(completions)
@@ -333,7 +351,7 @@ def efficiency_reward(completions, **kwargs):
                     better_than_count.append(0)
                     valid_comparison_count.append(0)
                 
-                answer = extract_content(completions[i], "answer")
+                answer = extract_content(completions[i], final_tag)
                 answer_texts.append(answer)
             
             table["reasoning_length"] = reasoning_lengths
@@ -364,6 +382,10 @@ def reasoning_reward(completions, **kwargs):
         completions: List of completions
         **kwargs: Additional keyword arguments
     """
+    # Get tags from kwargs
+    intermediate_tag = kwargs.get("intermediate_tag", "think")
+    final_tag = kwargs.get("final_tag", "answer")
+    
     completion_data, question, reference_answer, _ = precompute_completion_data(completions, **kwargs)
     
     ppl_values = []
@@ -393,6 +415,9 @@ def reasoning_reward(completions, **kwargs):
         for rank, (idx, _) in enumerate(sorted_pairs):
             ranks[idx] = rank + 1
             final_rewards[idx] = float((valid_count - rank) / valid_count)
+        
+    else:
+        final_rewards = [0.0] * len(completions)
     
     if wandb.run is not None and "global_step" in kwargs:
         try:
@@ -442,7 +467,7 @@ def reasoning_reward(completions, **kwargs):
                     reasoning_contents.append("")
                     sentence_counts.append(0)
                 
-                answer = extract_content(completions[i], "answer")
+                answer = extract_content(completions[i], final_tag)
                 answer_texts.append(answer)
             
             table["reasoning_length"] = reasoning_lengths
@@ -468,6 +493,10 @@ def validation_accuracy(completions, **kwargs):
         completions: List of completions
         **kwargs: Additional keyword arguments
     """
+    # Get tags from kwargs
+    intermediate_tag = kwargs.get("intermediate_tag", "think")
+    final_tag = kwargs.get("final_tag", "answer")
+    
     references = kwargs.get("reference", [])
     if not references or len(references) == 0:
         print("[WARNING] No reference answers provided for validation accuracy calculation")
@@ -528,7 +557,7 @@ def validation_accuracy(completions, **kwargs):
         else:
             ref_answer = str(references) if references else ""
         
-        answer_content = extract_content(completion, "answer")
+        answer_content = extract_content(completion, final_tag)
         
         if not answer_content:
             accuracy_scores.append(0.0)
@@ -576,7 +605,7 @@ def validation_accuracy(completions, **kwargs):
                 "question": [question for _ in range(len(completions))],
                 "completion": [_extract_completion_text(comp) for comp in completions],
                 "reference": ref_list,
-                "extracted_answer": [extract_content(_extract_completion_text(comp), "answer") for comp in completions],
+                "extracted_answer": [extract_content(_extract_completion_text(comp), final_tag) for comp in completions],
                 "edit_distance_score": accuracy_scores,
             }
             

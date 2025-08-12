@@ -120,6 +120,9 @@ class CustomGRPOTrainer(GRPOTrainer):
         self.diversity_history = []
         self.diversity_steps = []
         
+        # Store reference data for reward functions
+        self._current_reference_data = None
+        
         if self.args.sync_ref_model:
             if hasattr(self.model, 'get_adapter_state_dict'):
                 self.add_callback(SyncRefLoraModelCallback(ref_model=self.ref_model, accelerator=self.accelerator, policy_model=self.model))
@@ -341,6 +344,8 @@ class CustomGRPOTrainer(GRPOTrainer):
                 prompts=prompts,
                 completions=completions,
                 reference=reference_text,
+                intermediate_tag=self.intermediate_tag,
+                final_tag=self.final_tag,
                 **val_kwargs
             )
             
@@ -530,6 +535,14 @@ class CustomGRPOTrainer(GRPOTrainer):
         # Store original inputs for later reference extraction
         original_inputs = inputs.copy()
 
+        # Extract and store reference data for reward functions
+        self._current_reference_data = []
+        for orig_example in original_inputs:
+            if "reference" in orig_example:
+                self._current_reference_data.append(orig_example["reference"])
+            else:
+                self._current_reference_data.append("")
+
         # Sanitize inputs to avoid invalid keys for maybe_apply_chat_template
         try:
             # Convert NOVER format (prompt, reference) to TRL format (prompt, completion)
@@ -586,7 +599,12 @@ class CustomGRPOTrainer(GRPOTrainer):
                     sanitized_orig[key] = orig_example[key]
             sanitized_original_inputs.append(sanitized_orig)
         
-        reference_text = [maybe_apply_chat_template(orig_example, self.processing_class).get("reference", "") for orig_example in sanitized_original_inputs]
+        # Use stored reference data if available (more reliable than maybe_apply_chat_template)
+        if hasattr(self, '_current_reference_data') and self._current_reference_data:
+            reference_text = self._current_reference_data
+        else:
+            # Fallback to maybe_apply_chat_template
+            reference_text = [maybe_apply_chat_template(orig_example, self.processing_class).get("reference", "") for orig_example in sanitized_original_inputs]
         
         completion_ids = result["completion_ids"]
         
@@ -845,3 +863,73 @@ class CustomGRPOTrainer(GRPOTrainer):
                 
                 # Also log the metrics that the parent would have logged
                 wandb.log(logs)
+
+    def _calculate_rewards(self, inputs, prompts, completions, completion_ids_list):
+        """
+        Override to ensure reference data is properly passed to reward functions.
+        """
+        import warnings
+        from trl.data_utils import is_conversational, apply_chat_template
+        from accelerate.utils import gather
+        from trl.extras.profiling import profiling_context
+        
+        device = self.accelerator.device
+        rewards_per_func = torch.zeros(len(prompts), len(self.reward_funcs), device=device)
+
+        # Repeat all input columns (but "prompt", "completion", and "completion_ids") to match the num of generations
+        keys = [key for key in inputs[0] if key not in ["prompt", "completion", "completion_ids"]]
+        reward_kwargs = {key: [example[key] for example in inputs] for key in keys}
+
+        # IMPORTANT: Add reference data back to reward_kwargs
+        # Since we renamed 'reference' to 'completion' for TRL compatibility,
+        # we need to extract the reference data from 'completion' field and add it back
+        if "completion" in inputs[0]:
+            reward_kwargs["reference"] = [example["completion"] for example in inputs]
+        
+        # Use stored reference data if available
+        if hasattr(self, '_current_reference_data') and self._current_reference_data:
+            reward_kwargs["reference"] = self._current_reference_data
+        
+        # This allows for dynamic reward shaping based on training progress.
+        reward_kwargs["trainer_state"] = self.state
+        
+        for i, (reward_func, reward_processing_class, reward_func_name) in enumerate(
+            zip(self.reward_funcs, self.reward_processing_classes, self.reward_func_names)
+        ):
+            with profiling_context(self, reward_func_name):
+                if isinstance(reward_func, nn.Module):  # Module (no PretrainedModel) for compat with compiled models
+                    if is_conversational(inputs[0]):
+                        messages = [{"messages": p + c} for p, c in zip(prompts, completions)]
+                        texts = [apply_chat_template(x, reward_processing_class)["text"] for x in messages]
+                    else:
+                        texts = [p + c for p, c in zip(prompts, completions)]
+                    reward_inputs = reward_processing_class(
+                        text=texts, return_tensors="pt", padding=True, padding_side="right", add_special_tokens=False
+                    )
+                    reward_inputs = super()._prepare_inputs(reward_inputs)
+                    with torch.inference_mode():
+                        rewards_per_func[:, i] = reward_func(**reward_inputs).logits[:, 0]  # Shape (B*G,)
+                else:
+                    output_reward_func = reward_func(
+                        prompts=prompts, completions=completions, completion_ids=completion_ids_list, **reward_kwargs
+                    )
+                    # Convert None values to NaN
+                    output_reward_func = [reward if reward is not None else torch.nan for reward in output_reward_func]
+
+                    rewards_per_func[:, i] = torch.tensor(output_reward_func, dtype=torch.float32, device=device)
+
+        # If all reward functions return None for a given row, issue a detailed warning
+        if torch.isnan(rewards_per_func).all(dim=1).any():
+            nan_row_idx = torch.isnan(rewards_per_func).all(dim=1).nonzero(as_tuple=True)[0][0]
+            row_reward_kwargs = {key: value[nan_row_idx] for key, value in reward_kwargs.items()}
+            row_reward_kwargs["prompt"] = prompts[nan_row_idx]
+            row_reward_kwargs["completion"] = completions[nan_row_idx]
+            warnings.warn(
+                f"All reward functions returned None for the following kwargs: {row_reward_kwargs}. "
+                "Please ensure that at least one reward function returns a valid reward."
+            )
+
+        # Gather the reward per function: this part is crucial, because the rewards are normalized per group and the
+        # completions may be distributed across processes
+        rewards_per_func = gather(rewards_per_func)
+        return rewards_per_func
