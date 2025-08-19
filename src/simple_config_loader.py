@@ -6,7 +6,7 @@
 
 import os
 import argparse
-import subprocess
+import yaml
 
 def get_config_value(config_name: str, key: str, default: str = "") -> str:
     """
@@ -24,15 +24,27 @@ def get_config_value(config_name: str, key: str, default: str = "") -> str:
         return default
     
     try:
-        cmd = f"grep -E '^\\s*{key.split('.')[-1]}:\\s*' {config_file} | head -1 | awk -F': ' '{{print $2}}' | sed 's/#.*$//' | tr -d '\"' | xargs"
-        result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
+        with open(config_file, 'r', encoding='utf-8') as f:
+            config = yaml.safe_load(f)
         
-        if result.returncode == 0 and result.stdout.strip():
-            return result.stdout.strip()
+        # Navigate through nested keys
+        keys = key.split('.')
+        value = config
+        
+        for k in keys:
+            if isinstance(value, dict) and k in value:
+                value = value[k]
+            else:
+                return default
+        
+        # Convert to string and return
+        if value is not None:
+            return str(value)
         else:
             return default
+            
     except Exception as e:
-        print(f"Error getting config value: {e}")
+        print(f"Error getting config value: {e}", file=os.sys.stderr)
         return default
 
 def main():
@@ -51,10 +63,7 @@ def main():
     
     args = parser.parse_args()
     
-    key_parts = args.key.split('.')
-    last_key = key_parts[-1]
-    
-    value = get_config_value(args.config_name, last_key, args.default or "")
+    value = get_config_value(args.config_name, args.key, args.default or "")
     print(value)
 
 if __name__ == "__main__":
