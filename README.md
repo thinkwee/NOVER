@@ -3,7 +3,7 @@
 </div>
 
 <p align="center">
-    【📄 <a href="https://www.arxiv.org/pdf/2505.16022">arXiv</a> | 🤗 <a href="https://huggingface.co/papers/2505.16022">HF Papers</a> | 🧠 <a href="https://www.alphaxiv.org/abs/2505.16022">alphaArxiv</a> | 📦 <a href="https://huggingface.co/collections/thinkwee/novereason-68937ca75331dfaddaf24016">HF Dataset</a>】
+    【📖 <a href="https://www.arxiv.org/pdf/2505.16022">arXiv</a> | 🤗 <a href="https://huggingface.co/papers/2505.16022">HF Papers</a> | 🧠 <a href="https://www.alphaxiv.org/abs/2505.16022">alphaArxiv</a> | 📦 <a href="https://huggingface.co/collections/thinkwee/novereason-68937ca75331dfaddaf24016">NOVEReason Datasets</a> | 🚀 <a href="https://huggingface.co/collections/thinkwee/nover1-68a6524eac725c915abd77e3">NOVER1 Models</a>】
 </p>
 
 # NOVER: Incentive Training for Language Models via Verifier-Free Reinforcement Learning
