@@ -1,0 +1,53 @@
+defaults:
+  - config
+
+project:
+  suffix: "NOVER1-Qwen3-4B"
+  wandb_project: "YOUR_WANDB_PROJECT"
+  save_base_path: "YOUR_SAVE_BASE_PATH"
+
+dataset:
+  name: "NOVEReason_5k_custom_tag" # The same as thinkwee/NOVEReason_5k, but with a custom <reasoning> tag instead of <think> tag in the question prompt, since Qwen3-4B-Instruct-2507 supress <think> tag.
+  subset: null
+  hf_home: "YOUR_HF_HOME"
+  force_chat_template: true # Use chat template for instruct-tuned models
+  intermediate_tag: "reasoning"  # As Qwen 3-4B Instruct eliminate the <think> tag during fine-tuning for faster inference, we need to use a custom tag for reasoning steps.
+
+model:
+  name: "Qwen/Qwen3-4B-Instruct-2507"
+  name_vllm: "Qwen/Qwen3-4B-Instruct-2507"
+
+training:
+  temperature: 0.9
+  save_steps: 1000
+  save_total_limit: 5
+  logging_steps: 10
+  max_completion_length: 1024
+  ref_model_sync_steps: 500
+  batch_size: 4
+  num_generations: 4
+  use_liger_loss: false
+  top_entropy_quantile: 0.2
+  importance_sampling_level: "sequence"
+
+reward:
+  tag_format_reward_weight: 1.0
+  reasoning_reward_weight: 1.0
+  efficiency_reward_weight: 0.1
+
+lora:
+  r: 64
+  lora_alpha: 128
+  lora_dropout: 0.05
+  bias: "none"
+  task_type: "CAUSAL_LM"
+  target_modules:
+    - "q_proj"
+    - "k_proj"
+    - "v_proj"
+    - "o_proj"
+    - "gate_proj"
+    - "up_proj"
+    - "down_proj"
+  modules_to_save:
+    - "lm_head"

@@ -1,0 +1,51 @@
+defaults:
+  - config
+
+project:
+  suffix: "NOVER1-Qwen2.5-7B"
+  wandb_project: "YOUR_WANDB_PROJECT"
+  save_base_path: "YOUR_SAVE_BASE_PATH"
+
+dataset:
+  name: "thinkwee/NOVEReason_5k"
+  subset: null
+  hf_home: "YOUR_HF_HOME"
+
+model:
+  name: "Qwen/Qwen2.5-7B"
+  name_vllm: "Qwen/Qwen2.5-7B"
+
+training:
+  temperature: 0.9
+  save_steps: 3000
+  save_total_limit: 5
+  logging_steps: 100
+  max_completion_length: 4096
+  ref_model_sync_steps: 500
+  batch_size: 8
+  num_generations: 8
+  use_liger_loss: false
+  top_entropy_quantile: 0.2
+  importance_sampling_level: "sequence"
+
+reward:
+  tag_format_reward_weight: 1.0
+  reasoning_reward_weight: 1.0
+  efficiency_reward_weight: 0.1
+
+lora:
+  r: 64
+  lora_alpha: 128
+  lora_dropout: 0.05
+  bias: "none"
+  task_type: "CAUSAL_LM"
+  target_modules:
+    - "q_proj"
+    - "k_proj"
+    - "v_proj"
+    - "o_proj"
+    - "gate_proj"
+    - "up_proj"
+    - "down_proj"
+  modules_to_save:
+    - "lm_head"
