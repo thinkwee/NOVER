@@ -27,6 +27,7 @@ This is the official implementation of the paper ["NOVER: Incentive Training for
 - [x] Streamline NCCL logging  
 - [x] Simplify start script  
 - [x] Clean full NOVEReason data (data has been cleaned, but not all was used in the paper)  
+- [x] Release NOVER1-Qwen2.5-7B and NOVER1-Qwen3-4B and config files
 - [ ] Add inverse incentive training support  
 - [ ] Add incentive steering support  
 
