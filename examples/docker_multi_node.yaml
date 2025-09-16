@@ -1,0 +1,42 @@
+# Example Docker configuration for NOVER multi-node setup
+defaults:
+  - config
+
+project:
+  suffix: "docker_multi_node"
+  wandb_project: "nover_docker"
+  save_base_path: "/shared/models"
+
+dataset:
+  name: "your_dataset"
+  hf_home: "/shared/huggingface"
+
+model:
+  name: "Qwen/Qwen2.5-7B-Instruct"
+  name_vllm: "Qwen/Qwen2.5-7B-Instruct"
+
+training:
+  batch_size: 2
+  save_steps: 50
+  logging_steps: 10
+  max_completion_length: 512
+
+distributed:
+  num_nodes: 2
+  node_rank: 0  # Will be overridden by environment
+  master_addr: "nover-master"  # Docker service name
+  master_port: "29500"
+  nccl_socket_ifname: "eth0"
+  backend: "nccl"
+
+gpu:
+  training:
+    gpu_ids: "0,1,2,3"
+    num_gpus: 4
+  vllm:
+    gpu_ids: "0,1"
+    tensor_parallel_size: 2
+
+vllm:
+  port: 8087
+  host: "0.0.0.0"  # Listen on all interfaces for container networking

@@ -1,0 +1,86 @@
+# Docker Compose example for NOVER multi-node training
+# This demonstrates how to run NOVER training across multiple containers
+
+version: '3.8'
+
+services:
+  # Master node (rank 0)
+  nover-node0:
+    build: .
+    container_name: nover-master
+    hostname: nover-master
+    environment:
+      - CUDA_VISIBLE_DEVICES=0,1,2,3
+      - NODE_RANK=0
+      - MASTER_ADDR=nover-master
+      - MASTER_PORT=29500
+    volumes:
+      - ./config:/app/config
+      - ./models:/app/models
+      - ./data:/app/data
+      - shared-storage:/shared
+    ports:
+      - "8087:8087"  # vLLM server
+      - "29500:29500"  # Distributed communication
+    networks:
+      - nover-network
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              device_ids: ['0', '1', '2', '3']
+              capabilities: [gpu]
+    command: >
+      bash -c "
+        # Start vLLM server in background
+        ./run_multi_node_vllm.sh docker_multi_node_node0 single &
+        sleep 30
+        # Start training
+        ./run_multi_node_training.sh docker_multi_node_node0 accelerate
+      "
+
+  # Worker node (rank 1)
+  nover-node1:
+    build: .
+    container_name: nover-worker1
+    hostname: nover-worker1
+    environment:
+      - CUDA_VISIBLE_DEVICES=0,1,2,3
+      - NODE_RANK=1
+      - MASTER_ADDR=nover-master
+      - MASTER_PORT=29500
+    volumes:
+      - ./config:/app/config
+      - ./models:/app/models
+      - ./data:/app/data
+      - shared-storage:/shared
+    networks:
+      - nover-network
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              device_ids: ['4', '5', '6', '7']
+              capabilities: [gpu]
+    depends_on:
+      - nover-node0
+    command: >
+      bash -c "
+        # Wait for master node to be ready
+        sleep 60
+        # Start training
+        ./run_multi_node_training.sh docker_multi_node_node1 accelerate
+      "
+
+volumes:
+  shared-storage:
+    driver: local
+
+networks:
+  nover-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16
