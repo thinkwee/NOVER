@@ -93,6 +93,15 @@ lora:
   modules_to_save:
     - "lm_head"
 
+# Distributed training configuration (for multi-node setups)
+distributed:
+  num_nodes: 1           # Total number of nodes in the cluster
+  node_rank: 0           # Current node rank (0-indexed, must be unique for each node)
+  master_addr: "localhost"  # Master node address for multi-node communication
+  master_port: "29500"   # Port for distributed communication
+  nccl_socket_ifname: "eth0"  # Network interface for NCCL communication
+  backend: "nccl"        # Distributed backend ("nccl" for GPU, "gloo" for CPU)
+
 # GPU configuration
 gpu:
   # Training GPU configuration

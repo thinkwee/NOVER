@@ -57,14 +57,37 @@ export WANDB_ENTITY=your_entity
 
 4. Start the training! This will begin the training process using the configuration parameters defined in `config/my_exp.yaml`.
 
+### Single-Node Training
+
 ```bash
 # first, start the vllm server
 # This will launch a VLLM server for model rollouts in Reinforcement Learning
-./scripts/run_vllm_server.sh my_exp
+./run_vllm_server.sh my_exp
 
 # then, start the training
-./scripts/run_training.sh my_exp
+./run_training.sh my_exp
 ```
+
+### Multi-Node Multi-GPU Training
+
+For distributed training across multiple nodes, NOVER provides dedicated multi-node scripts:
+
+```bash
+# 1. Generate node-specific configuration files
+./multi_node_helper.sh setup multi_node_example
+
+# 2. Start vLLM server (on one or more nodes)
+./run_multi_node_vllm.sh multi_node_example single
+
+# 3. Start training on all nodes
+# On master node (rank 0):
+./run_multi_node_training.sh multi_node_example_node0 accelerate
+
+# On worker nodes (rank 1, 2, ...):
+./run_multi_node_training.sh multi_node_example_node1 accelerate
+```
+
+For detailed multi-node setup instructions, see [MULTI_NODE_GUIDE.md](MULTI_NODE_GUIDE.md).
 
 ## Data
 - Format your data as a standard Hugging Face Arrow dataset with at least two columns: `prompt` and `reference`, representing input and output in any standard SFT dataset. No conversational format or system prompts are required.
@@ -87,13 +110,13 @@ Answer the question and return in the following format:
 
 ```bash
 # Format Hugging Face dataset
-./scripts/format_dataset.sh squad --prompt-column question --reference-column answers.text
+./format_dataset.sh squad --prompt-column question --reference-column answers.text
 
 # Format a custom CSV file
-./scripts/format_dataset.sh data.csv --prompt-column question --reference-column answer
+./format_dataset.sh data.csv --prompt-column question --reference-column answer
 
 # Format a custom JSONL file
-./scripts/format_dataset.sh data.jsonl --prompt-column input --reference-column output
+./format_dataset.sh data.jsonl --prompt-column input --reference-column output
 ```
 
 ## Generation

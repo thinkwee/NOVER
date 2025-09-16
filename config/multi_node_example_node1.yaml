@@ -1,0 +1,7 @@
+# Auto-generated node-specific configuration for node 1
+defaults:
+  - multi_node_example
+
+distributed:
+  node_rank: 1
+  master_addr: "10.0.0.1"

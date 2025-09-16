@@ -1,0 +1,62 @@
+defaults:
+  - config
+
+project:
+  suffix: "multi_node_exp"
+  wandb_project: "nover_multi_node"
+  save_base_path: "/shared/path/to/save/models"  # Ensure this path is accessible from all nodes
+
+dataset:
+  name: "your_dataset_name_under_hf_home"
+  subset: null
+  hf_home: "/shared/path/to/huggingface"  # Ensure this path is accessible from all nodes
+
+model:
+  name: "Qwen/Qwen2.5-7B-Instruct"
+  name_vllm: "Qwen/Qwen2.5-7B-Instruct"
+
+training:
+  batch_size: 4  # Reduce batch size per GPU when using more GPUs
+  save_steps: 100
+  logging_steps: 100
+  max_completion_length: 1024
+  ref_model_sync_steps: 100
+
+# Multi-node distributed training configuration
+distributed:
+  # Total number of nodes in the cluster
+  num_nodes: 2
+  
+  # Current node rank (0-indexed, must be unique for each node)
+  node_rank: 0
+  
+  # Master node address and port for communication
+  master_addr: "10.0.0.1"  # IP address of the master node (node 0)
+  master_port: "29500"     # Port for distributed communication
+  
+  # Network interface to use for NCCL communication
+  nccl_socket_ifname: "eth0"  # Network interface name, adjust based on your setup
+  
+  # NCCL backend configuration
+  backend: "nccl"  # Use "gloo" for CPU-only training
+
+# GPU configuration for multi-node setup
+gpu:
+  # Training GPU configuration
+  training:
+    gpu_ids: "0,1,2,3"  # GPU IDs on this node for training
+    num_gpus: 4         # Number of GPUs per node for training
+    main_process_port: 28890
+  
+  # vLLM server GPU configuration
+  vllm:
+    gpu_ids: "4,5,6,7"  # GPU IDs on this node for vLLM (separate from training GPUs)
+    num_gpus: 4         # Number of GPUs per node for vLLM
+    tensor_parallel_size: 4  # Tensor parallelism across GPUs on this node
+
+vllm:
+  # Use different ports for different nodes if running vLLM on multiple nodes
+  port: 8087
+  gpu_memory_utilization: 0.85
+  # For multi-node vLLM, you might want to disable this and use external load balancer
+  host: "0.0.0.0"  # Listen on all interfaces for multi-node access

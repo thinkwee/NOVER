@@ -1,0 +1,7 @@
+# Node 1 configuration for 2-node setup
+defaults:
+  - multi_node_example
+
+distributed:
+  node_rank: 1  # Worker node
+  master_addr: "10.0.0.1"  # IP of master node (node 0)
