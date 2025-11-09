@@ -124,13 +124,26 @@ tokenizer.save_pretrained(merge_output_dir)
 If you find this work useful, please cite our paper:
 
 ```bibtex
-@article{liu2025noverincentivetraininglanguage,
-      title={NOVER: Incentive Training for Language Models via Verifier-Free Reinforcement Learning}, 
-      author={Wei Liu and Siya Qi and Xinyu Wang and Chen Qian and Yali Du and Yulan He},
-      year={2025},
-      eprint={2505.16022},
-      archivePrefix={arXiv},
-      primaryClass={cs.CL},
-      url={https://arxiv.org/abs/2505.16022}, 
+@inproceedings{liu-etal-2025-nover,
+    title = "{NOVER}: Incentive Training for Language Models via Verifier-Free Reinforcement Learning",
+    author = "Liu, Wei  and
+      Qi, Siya  and
+      Wang, Xinyu  and
+      Qian, Chen  and
+      Du, Yali  and
+      He, Yulan",
+    editor = "Christodoulopoulos, Christos  and
+      Chakraborty, Tanmoy  and
+      Rose, Carolyn  and
+      Peng, Violet",
+    booktitle = "Proceedings of the 2025 Conference on Empirical Methods in Natural Language Processing",
+    month = nov,
+    year = "2025",
+    address = "Suzhou, China",
+    publisher = "Association for Computational Linguistics",
+    url = "https://aclanthology.org/2025.emnlp-main.378/",
+    pages = "7450--7469",
+    ISBN = "979-8-89176-332-6",
+    abstract = "Recent advances, such as DeepSeek R1-Zero, highlight the effectiveness of incentive training, a reinforcement learning paradigm that computes rewards solely based on the final answer part of a language model{'}s output, thereby encouraging the generation of intermediate reasoning steps. However, these methods fundamentally rely on external verifiers, which limits their applicability to domains like mathematics and coding, where such verifiers are readily available. Although reward models can serve as verifiers, they require high-quality annotated data and are costly to train.In this work, we propose $\textbf{NOVER}$, $\textbf{\textit{NO-VER}}$ifier Reinforcement Learning, a general reinforcement learning framework that requires only standard supervised fine-tuning data with no need for an external verifier. NOVER enables incentive training across a wide range of text-to-text tasks and outperforms the model of the same size distilled from large reasoning models such as DeepSeek R1 671B by 7.7{\%}. Moreover, the flexibility of NOVER enables new possibilities for optimizing large language models, such as inverse incentive training."
 }
 ```
